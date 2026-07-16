@@ -667,22 +667,32 @@ function dlSVG(id,name){
 }
 function dlPNG(id,name){
   const svg=document.getElementById(id);
-  const vb=svg.viewBox.baseVal; const scale=3;
-  const xml=new XMLSerializer().serializeToString(svg);
+  const vb=svg.viewBox.baseVal;
+  const w=(vb&&vb.width)?vb.width:svg.clientWidth||700;
+  const h=(vb&&vb.height)?vb.height:svg.clientHeight||210;
+  const scale=3;
+  const clone=svg.cloneNode(true);
+  clone.setAttribute('width',w);
+  clone.setAttribute('height',h);
+  const xml=new XMLSerializer().serializeToString(clone);
   const svg64='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(xml)));
   const img=new Image();
   img.onload=function(){
     const c=document.createElement('canvas');
-    c.width=vb.width*scale; c.height=vb.height*scale;
+    c.width=Math.round(w*scale); c.height=Math.round(h*scale);
     const ctx=c.getContext('2d');
-    ctx.setTransform(scale,0,0,scale,0,0);
-    ctx.drawImage(img,0,0);
+    ctx.fillStyle='#0F1620';
+    ctx.fillRect(0,0,c.width,c.height);
+    ctx.drawImage(img,0,0,c.width,c.height);
     c.toBlob(function(blob){
       const a=document.createElement('a');
       a.href=URL.createObjectURL(blob); a.download=name+'.png'; a.click();
       setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     },'image/png');
   };
+  img.onerror=function(){ dlSVG(id,name); };
+  img.src=svg64;
+};
   img.onerror=function(){ dlSVG(id,name); };
   img.src=svg64;
 }
