@@ -689,10 +689,12 @@ function dlPNG(id,name){
       a.href=URL.createObjectURL(blob); a.download=name+'.png'; a.click();
       setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     },'image/png');
+c.toBlob(function(blob){
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob); a.download=name+'.png'; a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+    },'image/png');
   };
-  img.onerror=function(){ dlSVG(id,name); };
-  img.src=svg64;
-};
   img.onerror=function(){ dlSVG(id,name); };
   img.src=svg64;
 }
