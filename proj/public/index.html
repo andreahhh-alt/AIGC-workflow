@@ -1,0 +1,815 @@
+<meta charset="utf-8">
+<title>《四季之地》男主线 场7–12 · AIGC分镜提示词与色卡</title>
+<style>
+  :root{
+    --bg:#0C1119;--panel:#131C26;--panel2:#0F1620;--line:#243343;--line2:#1B2734;
+    --ink:#E7ECF1;--dim:#8395A6;--faint:#586B7E;
+    --summer:#5FC2C9;--autumn:#E0913C;--winter:#93A9C6;--star:#F0B429;--danger:#C0503F;
+    --serif:"Songti SC","Noto Serif SC",Georgia,serif;
+    --sans:"PingFang SC","Noto Sans SC","Helvetica Neue",sans-serif;
+    --mono:"SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       -webkit-font-smoothing:antialiased;padding:40px 26px 90px;line-height:1.6}
+  .wrap{max-width:1200px;margin:0 auto}
+  header{border-bottom:1px solid var(--line);padding-bottom:20px;margin-bottom:22px}
+  h1{font-family:var(--serif);font-weight:400;font-size:30px;letter-spacing:.12em;margin:0 0 8px}
+  .sub{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.1em}
+
+  .baseline{background:var(--panel);border:1px solid var(--line);padding:16px 18px;margin-bottom:14px}
+  .baseline h2{font-family:var(--serif);font-size:15px;font-weight:400;letter-spacing:.08em;margin:0 0 10px;color:var(--summer)}
+  .baseline .row{display:flex;gap:10px;font-size:12.5px;line-height:1.9;color:var(--dim);flex-wrap:wrap}
+  .baseline b{color:var(--ink);font-weight:400}
+  .baseline .k{font-family:var(--mono);color:var(--faint);min-width:96px;flex-shrink:0}
+  .baseline .line{display:flex;gap:10px;width:100%}
+
+  .note{border:1px solid var(--autumn);padding:12px 16px;margin-bottom:24px;font-size:12.5px;line-height:1.9;color:var(--dim)}
+  .note b{color:var(--autumn);font-weight:400}
+  .note code{font-family:var(--mono);color:var(--ink);background:var(--panel2);padding:1px 6px;border:1px solid var(--line)}
+
+  /* 场 section */
+  .scene{margin-bottom:34px;border:1px solid var(--line);background:var(--panel2)}
+  .scene-top{display:grid;grid-template-columns:1fr 360px;gap:0;border-bottom:1px solid var(--line)}
+  @media(max-width:820px){.scene-top{grid-template-columns:1fr}}
+  .scene-id{padding:16px 20px}
+  .scene-id .sc-no{font-family:var(--mono);font-size:12px;color:var(--autumn);letter-spacing:.08em}
+  .scene-id h3{font-family:var(--serif);font-size:19px;font-weight:400;letter-spacing:.06em;margin:6px 0 8px}
+  .scene-id .desc{font-size:12.5px;color:var(--dim);line-height:1.8;max-width:560px}
+  .scene-id .meta{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:8px}
+
+  /* 色卡 */
+  .cardwrap{border-left:1px solid var(--line);padding:14px 16px;display:flex;flex-direction:column;gap:10px;background:var(--panel)}
+  @media(max-width:820px){.cardwrap{border-left:none;border-top:1px solid var(--line)}}
+  .cardwrap .clabel{font-family:var(--mono);font-size:10.5px;color:var(--faint);display:flex;justify-content:space-between;align-items:center}
+  .cardwrap svg{width:100%;height:auto;display:block;border:1px solid var(--line)}
+  .dlbtns{display:flex;gap:8px}
+  .dlbtns button{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--dim);
+    font-family:var(--mono);font-size:11px;padding:8px 6px;cursor:pointer;transition:.15s;letter-spacing:.05em}
+  .dlbtns button:hover{color:var(--ink);border-color:var(--summer);background:#16222c}
+  .dlbtns button:active{transform:translateY(1px)}
+
+  /* 分镜组 prompt */
+  .groups{padding:6px 20px 20px}
+  .grp{border:1px solid var(--line2);margin-top:16px;background:var(--panel)}
+  .grp-hd{padding:11px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line2);flex-wrap:wrap}
+  .grp-hd .gn{font-family:var(--mono);font-size:12px;color:var(--summer)}
+  .grp-hd .gt{font-family:var(--serif);font-size:14px;color:var(--ink);letter-spacing:.04em}
+  .grp-hd .dur{font-family:var(--mono);font-size:10.5px;color:var(--star);border:1px solid #6A5A1E;padding:0 6px}
+  .grp-hd .tpl{font-family:var(--mono);font-size:10px;color:var(--faint);margin-left:auto;border:1px solid var(--line);padding:1px 6px}
+  .grp-body{padding:4px 16px 16px}
+
+  .field{margin-top:12px}
+  .field .fk{font-family:var(--mono);font-size:11px;color:var(--autumn);letter-spacing:.06em;margin-bottom:3px}
+  .field .fv{font-size:12.5px;color:var(--dim);line-height:1.85}
+  .field .fv b{color:var(--ink);font-weight:400}
+  .tl{font-family:var(--mono);font-size:11.5px;color:var(--dim);line-height:2}
+  .tl .t{color:var(--summer)}
+  .tl .act{color:var(--ink)}
+  .dia{color:var(--autumn)}
+  .four{font-size:11.5px;color:var(--faint);line-height:1.8;padding-left:12px;border-left:1px solid var(--line2);margin-top:2px}
+
+  .final{background:#0A0F16;border:1px solid var(--line);margin-top:12px}
+  .final .fhd{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line2)}
+  .final .fhd span{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+  .final .fhd button{background:transparent;border:1px solid var(--line);color:var(--summer);font-family:var(--mono);font-size:10.5px;padding:3px 10px;cursor:pointer}
+  .final .fhd button:hover{background:var(--summer);color:var(--bg)}
+  .final pre{margin:0;padding:12px;font-family:var(--mono);font-size:11.5px;line-height:1.75;color:var(--ink);white-space:pre-wrap;word-break:break-word}
+  .final pre.en{color:var(--dim);border-top:1px solid var(--line2)}
+
+  .link{border:1px solid var(--line2);margin-top:12px;padding:10px 14px;font-size:11.5px;color:var(--faint);line-height:1.8}
+  .link .lk{font-family:var(--mono);color:var(--winter);font-size:10.5px}
+
+  footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.9;color:var(--faint);max-width:900px}
+  /* 反馈 + AI */
+  .fb{border-top:1px dashed var(--line);margin-top:14px;padding-top:12px}
+  .fb-hd{font-family:var(--mono);font-size:11px;color:var(--winter);letter-spacing:.06em;display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .fb-hd .cnt{color:var(--faint)}
+  .fb-list{display:flex;flex-direction:column;gap:8px;margin-bottom:8px}
+  .fb-item{border:1px solid var(--line2);background:#0A0F16}
+  .fb-item-hd{font-family:var(--mono);font-size:10.5px;color:var(--autumn);padding:7px 10px;border-bottom:1px solid var(--line2);display:flex;justify-content:space-between}
+  .fb-item-hd .del{color:var(--faint);cursor:pointer;border:none;background:none;font-family:var(--mono);font-size:10.5px}
+  .fb-item-hd .del:hover{color:var(--danger)}
+  .fb-item-txt{padding:8px 10px;font-size:12px;color:var(--ink);line-height:1.7;white-space:pre-wrap}
+  .fb-analyze{margin:0 10px 10px;background:var(--panel2);border:1px solid var(--winter);color:var(--winter);
+    font-family:var(--mono);font-size:10.5px;padding:6px 12px;cursor:pointer;transition:.15s}
+  .fb-analyze:hover{background:var(--winter);color:var(--bg)}
+  .fb-analyze:disabled{opacity:.5;cursor:default}
+  .fb-analysis{margin:0 10px 10px;padding:10px 12px;border:1px solid var(--line);background:#0C1119;
+    font-size:11.5px;line-height:1.8;color:var(--dim);white-space:pre-wrap;display:none}
+  .fb-analysis.on{display:block}
+  .fb-analysis .atag{font-family:var(--mono);color:var(--star);font-size:10.5px}
+  .fb-analysis .copy2{float:right;background:transparent;border:1px solid var(--line);color:var(--summer);font-family:var(--mono);font-size:10px;padding:2px 8px;cursor:pointer}
+  .fb-in{width:100%;min-height:52px;background:#0A0F16;border:1px solid var(--line);color:var(--ink);
+    font-family:var(--sans);font-size:12.5px;padding:8px 10px;resize:vertical;line-height:1.6}
+  .fb-in:focus{outline:1px solid var(--winter)}
+  .fb-btns{display:flex;gap:8px;margin-top:8px}
+  .fb-add{background:var(--winter);border:1px solid var(--winter);color:var(--bg);font-family:var(--mono);
+    font-size:11px;padding:7px 16px;cursor:pointer}
+  .fb-add:hover{opacity:.85}
+  .fb-note{font-size:10.5px;color:var(--faint);margin-top:6px;font-family:var(--mono)}
+
+  /* AI 设置面板 */
+  .aiset{border:1px solid var(--line);background:var(--panel);margin-bottom:22px}
+  .aiset summary{cursor:pointer;padding:12px 16px;font-family:var(--mono);font-size:12px;color:var(--summer);list-style:none;display:flex;align-items:center;gap:8px}
+  .aiset summary::-webkit-details-marker{display:none}
+  .aiset summary:hover{background:#161F2A}
+  .aiset .body{padding:4px 16px 16px;border-top:1px solid var(--line2)}
+  .aiset .body p{font-size:12px;color:var(--dim);line-height:1.85;margin:8px 0}
+  .aiset .body b{color:var(--ink)}
+  .aiset .stat{font-family:var(--mono);font-size:11px;padding:8px 10px;border:1px solid var(--line);margin:8px 0;color:var(--dim)}
+  .aiset .stat.ok{border-color:#2C5A3F;color:#7FC29B}
+  .aiset .row2{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .aiset input{flex:1;min-width:240px;background:#0A0F16;border:1px solid var(--line);color:var(--ink);font-family:var(--mono);font-size:11.5px;padding:8px 10px}
+  .aiset input:focus{outline:1px solid var(--summer)}
+  .aiset button{background:var(--panel2);border:1px solid var(--summer);color:var(--summer);font-family:var(--mono);font-size:11px;padding:8px 14px;cursor:pointer}
+  .aiset button:hover{background:var(--summer);color:var(--bg)}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+<header>
+  <h1>男主线 · 场 7 – 12 · AIGC 分镜提示词 ＋ 色卡</h1>
+  <div class="sub">《四季之地》刘夏单线 · 13 个 15s 分镜组 · 6 张可下载色卡 · aigc-film-prompts v4.7</div>
+</header>
+
+<div class="baseline">
+  <h2>全片基准 · STYLE LOCK（场7–12 共用 · 2080 夏派）</h2>
+  <div class="row"><span class="line"><span class="k">摄影风格</span><b>自然主义纪实摄影，35mm film 轻颗粒，手持呼吸感克制</b></span></div>
+  <div class="row"><span class="line"><span class="k">色调基调</span><b>低饱和暖灰，高光偏冷、阴影偏暖的重庆湿热夏日光</b></span></div>
+  <div class="row"><span class="line"><span class="k">世界观美术</span><b>近未来赛博山城：层叠居民楼＋气候穹顶＋白色四季之地塔楼，旧物与冷科技并置</b></span></div>
+  <div class="row"><span class="line"><span class="k">情绪基调</span><b>被规训的麻木，压抑中透出一线好奇</b></span></div>
+  <div class="row"><span class="line"><span class="k">夏派美学</span><b>高反差 / 短硬阴影 / 3500–5000K / 强直射光（内景走廊起于 5000K 冷光渐暖）</b></span></div>
+  <div class="row"><span class="line"><span class="k">角色锚点</span><b>刘夏：22 岁，瘦，重黑眼圈，发丝略乱，灰色休眠服→夏派工装，下半脸呼吸面罩（蓝色过滤指示灯）｜旺财：半米高圆头二手伴侣机器人，白壳满划痕，左眼指示灯接触不良</b></span></div>
+</div>
+
+<div class="note">
+  <b>生成前须知（可随时改路由）：</b>以下按 <code>通用 · T2V 文生视频</code> 双语基准撰写——无首帧参考图，全量描述。若你要用 <code>Kling / 即梦Seedance / 海螺Hailuo / 通义万相 / Runway Gen-4</code>，告诉我，我会切换对应语法（即梦/万相加防翻车词、海螺转方括号运镜、Runway 转英文主版且 Avoid 改正向）；若你已有首帧图，我改成 <code>I2V</code> 并把提示词压到 40–60%。运镜已遵守三铁律：单镜单向 ＋ 速度词 ＋ Dolly≠Zoom。每组末附<b>跨段衔接卡</b>。色卡在每场右侧，可下载 PNG／SVG。
+</div>
+
+<details class="aiset">
+  <summary>⚙ AI 接入设置（管理员）· 反馈与分析后端</summary>
+  <div class="body">
+    <div class="stat" id="ai-stat">检测后端中…</div>
+    <p>API Key <b>只保存在服务器端</b>，不会下发给任何访客；访客提交反馈、点「AI 分析」时，由后端用此 key 转发 Anthropic 请求。访客侧只能看到"已配置/未配置"状态。</p>
+    <div class="row2">
+      <input id="be-url" placeholder="后端地址（与网页同源部署可留空；否则填如 https://your-app.onrender.com）">
+      <button id="be-save">保存后端地址</button>
+    </div>
+    <div class="row2">
+      <input id="ai-model" placeholder="模型名（如 claude-sonnet-4-5，留空用服务器默认）">
+    </div>
+    <div class="row2">
+      <input id="ai-key" type="password" placeholder="Anthropic API Key（sk-ant-...，仅管理员填写）">
+      <input id="ai-pw" type="password" placeholder="管理员密码" style="min-width:150px;flex:0 0 auto">
+      <button id="ai-save">保存到服务器</button>
+    </div>
+    <p id="ai-msg" style="color:var(--summer);font-family:var(--mono);font-size:11px"></p>
+  </div>
+</details>
+<!-- ===================== 场7 ===================== -->
+<section class="scene">
+  <div class="scene-top">
+    <div class="scene-id">
+      <div class="sc-no">场 7 ·（原场7）</div>
+      <h3>内景 · 休眠设施走廊 · 清晨</h3>
+      <div class="desc">字幕「2080年 夏」。淡蓝仓盖打开，刘夏赤脚坐起哆嗦；三层胶囊仓依次开启，灰服的人爬出，无人说话。广播响起，他到储物柜换衣、戴上面罩。</div>
+      <div class="meta">情境映射 E-开场建立 ／ 2 组 · 5 镜 ／ 光线：5000K 冷光渐暖，内景顶光＋仓体自发冷光</div>
+    </div>
+    <div class="cardwrap">
+      <div class="clabel"><span>色卡 · 场7 苏醒（冷→暖）</span><span>1400×420</span></div>
+      <svg id="cc7" viewBox="0 0 700 210" xmlns="http://www.w3.org/2000/svg">
+        <rect width="700" height="210" fill="#0F1620"/>
+        <text x="16" y="30" fill="#E7ECF1" font-family="serif" font-size="16" letter-spacing="1">场7 · 休眠舱苏醒</text>
+        <text x="16" y="48" fill="#586B7E" font-family="monospace" font-size="10">2080 夏派 · 内景 · 5000K→暖 · 冷科技低照度</text>
+        <g font-family="monospace" font-size="9">
+          <rect x="16"  y="66" width="106" height="96" fill="#3E4C58"/><text x="20" y="180" fill="#8395A6">#3E4C58 冷阴影</text>
+          <rect x="130" y="66" width="106" height="96" fill="#A9C4D6"/><text x="134" y="180" fill="#8395A6">#A9C4D6 淡蓝冷光</text>
+          <rect x="244" y="66" width="106" height="96" fill="#DCE2E5"/><text x="248" y="180" fill="#8395A6">#DCE2E5 走廊白</text>
+          <rect x="358" y="66" width="106" height="96" fill="#8C9196"/><text x="362" y="180" fill="#8395A6">#8C9196 灰休眠服</text>
+          <rect x="472" y="66" width="106" height="96" fill="#E0B44A"/><text x="476" y="180" fill="#8395A6">#E0B44A 暖黄指示</text>
+          <rect x="586" y="66" width="98"  height="96" fill="#C98A3E"/><text x="590" y="180" fill="#8395A6">#C98A3E 苏醒暖调</text>
+        </g>
+      </svg>
+      <div class="dlbtns">
+        <button onclick="dlPNG('cc7','四季之地_场7_色卡')">下载 PNG</button>
+        <button onclick="dlSVG('cc7','四季之地_场7_色卡')">下载 SVG</button>
+      </div>
+    </div>
+  </div>
+  <div class="groups">
+
+    <div class="grp">
+      <div class="grp-hd"><span class="gn">分镜组 7-1</span><span class="gt">· 苏醒</span><span class="dur">15s</span><span class="tpl">D-1 标准</span></div>
+      <div class="grp-body">
+        <div class="field"><div class="fk">STYLE LOCK·本场</div><div class="fv">内景顶光＋胶囊仓自发冷光，起 5000K 冷调，随仓盖开启缓慢暖化至 4000K；短硬阴影，低饱和暖灰。</div></div>
+        <div class="field"><div class="fk">机位·焦段·运镜</div><div class="fv">机位：走廊地面高度、正对仓体、平视中景 → 缓慢升为过肩近景；<b>24mm 广角 f/5.6 深景深</b>（狭窄空间临场）；运镜：<b>极缓慢推镜（Slow Dolly In，几乎不可察觉）</b>。</div></div>
+        <div class="field"><div class="fk">分镜描述（0–15s）</div><div class="tl">
+          <span class="t">[0–5s]</span> <span class="act">字幕「2080年 夏」淡入；淡蓝仓盖自上而下缓缓打开，冷光沿缝隙渗出。</span><br>
+          <span class="t">[5–10s]</span> <span class="act">刘夏坐起，赤脚踩地，肩膀哆嗦一下（脚触凉地的生理收缩）。</span><br>
+          <span class="t">[10–15s]</span> <span class="act">镜头缓推，背景三层胶囊仓依次开启，灰服的人陆续爬出——有人揉眼、有人扶仓沿站立，全程无人说话。</span>
+        </div></div>
+        <div class="field"><div class="fk">关键帧强制声明</div><div class="fv">帧①≈2s：仓盖开启一半，冷光缝隙。帧②≈7s：刘夏赤脚触地、肩部收缩。末帧≈15s：三层仓体多人爬出的全景，刘夏在前景中景。</div></div>
+        <div class="field"><div class="fk">限制</div><div class="fv"><b>必须有：</b>仓盖开启的机械缓动、赤脚触凉的哆嗦、三层仓纵深。<b>不允许：</b>任何 VFX／光束／全息／发光特效；人物交谈或微笑；面罩（此段尚未戴）。<b>状态延续：</b>刘夏灰色休眠服、赤脚、未戴面罩、重黑眼圈。</div></div>
+        <div class="final">
+          <div class="fhd"><span>成片提示词 · 中文（主）</span><button onclick="cp(this)">复制</button></div>
+          <pre>近未来赛博山城休眠设施底层走廊，清晨。字幕「2080年 夏」淡入。24mm广角，深景深，摄影机贴地平视正对胶囊仓，极缓慢推镜（Slow Dolly In，几乎不可察觉）。淡蓝色胶囊仓盖自上而下缓缓打开，冷光从缝隙渗出。刘夏（22岁瘦削男青年，重黑眼圈，灰色休眠服，赤脚，未戴面罩）坐起，赤脚踩到凉地板，肩膀哆嗦一下。背景三层胶囊仓沿墙叠放依次开启，灰色休眠服的人陆续爬出，有人揉眼、有人扶仓沿站立，全程无人说话。5000K冷光随仓盖开启缓慢暖化，短硬阴影，低饱和暖灰，35mm film轻颗粒，自然主义纪实。不要任何发光特效、光束、全息、动漫光效。</pre>
+          <pre class="en">Near-future cyber-mountain-city cryo-facility corridor, dawn. Subtitle "2080 Summer" fades in. 24mm wide lens, deep focus, camera at floor level facing the pods, barely-perceptible Slow Dolly In. A pale-blue capsule lid slides open from top, cold light seeping through the seam. Liu Xia (22, gaunt, heavy dark circles, grey sleep-suit, barefoot, no mask) sits up, bare feet touch the cold floor, shoulders flinch. Behind him three stacked rows of pods open in sequence; people in grey sleep-suits climb out, rubbing eyes, steadying on pod rims — nobody speaks. 5000K cold light slowly warms as lids open; short hard shadows, desaturated warm-grey, 35mm film grain, naturalistic documentary. No glow FX, no light beams, no hologram, no anime light effects.</pre>
+        </div>
+        <div class="link"><span class="lk">跨段衔接卡 → 7-2：</span> 末帧＝刘夏立于三层仓前景／服装＝灰休眠服赤脚未戴罩／光＝冷光已微暖 4000K／道具＝无／情绪＝麻木清醒／机位落点＝走廊中段平视／镜轴＝面向储物柜方向（走廊纵深）／旺财＝未出现／音＝广播即将起／下一动作＝走向储物柜。</div>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-hd"><span class="gn">分镜组 7-2</span><span class="gt">· 戴上面罩</span><span class="dur">15s</span><span class="tpl">D-1 标准</span></div>
+      <div class="grp-body">
+        <div class="field"><div class="fk">机位·焦段·运镜</div><div class="fv">机位：储物柜前、侧 3/4 中景 → 切面部特写；<b>中景 35mm f/4</b> ／ 特写切 <b>85mm f/2</b>；运镜：<b>固定机位（Lock Frame）</b>，特写镜用<b>手持极轻微呼吸感</b>。</div></div>
+        <div class="field"><div class="fk">分镜描述（0–15s）</div><div class="tl">
+          <span class="t">[0–8s]</span> <span class="act">刘夏走到储物柜，换下休眠服换上夏派工装（画外广播同步）。</span><br>
+          <span class="t">[8–12s]</span> <span class="act">柜子最上层：一只下半脸呼吸面罩，鼻梁淡蓝过滤指示灯，特写。</span><br>
+          <span class="t">[12–15s]</span> <span class="act">面部特写：他拿起面罩扣上脸，指示灯亮一下——末帧定妆。</span>
+        </div></div>
+        <div class="field"><div class="fk">台词·画外广播（四要素）</div><div class="four">台词「夏派公民，欢迎苏醒。今年是2080年 六月一日……四季平安。」｜触发：0s 起即为环境广播，非人物开口｜音量/语气：公共广播播报腔，机械平稳、无起伏、略带回响｜同步肢体：刘夏充耳不闻地换衣，身体不为所动｜停顿节奏：句间 0.8s 停顿，「四季平安」四字加重收尾。</div></div>
+        <div class="field"><div class="fk">关键帧强制声明</div><div class="fv">帧①≈10s：面罩静物特写，指示灯未亮。末帧≈15s：面罩已扣上脸、指示灯亮起，只露眼睛和额头。</div></div>
+        <div class="field"><div class="fk">限制</div><div class="fv"><b>必须有：</b>面罩扣脸后指示灯的一次微亮（物理反光点，非发光）。<b>不允许：</b>指示灯发出光束或光晕；广播声出现人声情绪。<b>状态延续：</b>由休眠服换为夏派工装，末帧戴罩。</div></div>
+        <div class="final">
+          <div class="fhd"><span>成片提示词 · 中文（主）</span><button onclick="cp(this)">复制</button></div>
+          <pre>休眠设施储物柜前，清晨冷光渐暖。中景35mm接85mm面部特写，固定机位，特写用手持极轻微呼吸感。刘夏在储物柜换下灰色休眠服、换上夏派工装。柜子最上层一只贴合下半脸的呼吸辅助面罩，鼻梁处有淡蓝色过滤指示灯，静物特写。他拿起面罩扣在脸上，指示灯亮起一次（金属上一枚针尖大小的冷色反光点），只露出眼睛和额头。画外公共广播平稳播报「夏派公民，欢迎苏醒……四季平安」，他充耳不闻地换衣。低饱和暖灰，短硬阴影，35mm film颗粒。不要发光特效、不要光束、不要全息。</pre>
+          <pre class="en">At the locker, dawn cold light warming. Medium 35mm cutting to 85mm facial close-up, locked frame, close-up with faint handheld breathing. Liu Xia swaps his grey sleep-suit for summer-faction work clothes. On the top shelf: a lower-face breathing mask with a pale-blue filter indicator on the bridge, still-life close-up. He picks it up and clamps it over his face; the indicator blinks once (a pinpoint cold specular reflection on metal), leaving only eyes and forehead visible. Off-screen PA calmly announces "Summer citizens, welcome awake... peace to the four seasons," he ignores it while dressing. Desaturated warm-grey, short hard shadows, 35mm grain. No glow FX, no beams, no holograms.</pre>
+        </div>
+        <div class="link"><span class="lk">跨段衔接卡 → 8-1：</span> 末帧＝戴罩定妆特写／服装＝夏派工装＋面罩／光＝室内冷暖交界／道具＝面罩（已戴）／情绪＝麻木／机位落点＝面部特写／下一场＝推门至门口石阶／镜轴＝面向门口／旺财＝门口墙角待启动／音＝广播余音渐弱／下一动作＝推门迎热浪。</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+<!-- ===================== 场8 ===================== -->
+<section class="scene">
+  <div class="scene-top">
+    <div class="scene-id">
+      <div class="sc-no">场 8 ·（原场8）</div>
+      <h3>外景 · 休眠设施门口 / 石阶 · 日</h3>
+      <div class="desc">推门热浪扑面，阳光过曝先白后涌入颜色。重庆式山城层叠铺开，蝉鸣铺天；石阶两侧居民楼贴白色休眠封条，每四户约一户有人。墙角旺财启动，跟上刘夏沿梯坎往下。</div>
+      <div class="meta">情境映射 E-世界观建立 ／ 2 组 · 5 镜 ／ 光线：夏派强直射 4800K，过曝高光＋短硬阴影</div>
+    </div>
+    <div class="cardwrap">
+      <div class="clabel"><span>色卡 · 场8 山城夏日（高反差）</span><span>1400×420</span></div>
+      <svg id="cc8" viewBox="0 0 700 210" xmlns="http://www.w3.org/2000/svg">
+        <rect width="700" height="210" fill="#0F1620"/>
+        <text x="16" y="30" fill="#E7ECF1" font-family="serif" font-size="16" letter-spacing="1">场8 · 山城门口石阶</text>
+        <text x="16" y="48" fill="#586B7E" font-family="monospace" font-size="10">2080 夏派 · 外景 · 4800K强直射 · 过曝高反差</text>
+        <g font-family="monospace" font-size="9">
+          <rect x="16"  y="66" width="106" height="96" fill="#2E2A26"/><text x="20" y="180" fill="#8395A6">#2E2A26 硬阴影</text>
+          <rect x="130" y="66" width="106" height="96" fill="#7FB4D4"/><text x="134" y="180" fill="#8395A6">#7FB4D4 天空蓝</text>
+          <rect x="244" y="66" width="106" height="96" fill="#F1EEE7"/><text x="248" y="180" fill="#8395A6">#F1EEE7 过曝白</text>
+          <rect x="358" y="66" width="106" height="96" fill="#B87C4A"/><text x="362" y="180" fill="#8395A6">#B87C4A 山城墙赭</text>
+          <rect x="472" y="66" width="106" height="96" fill="#6E7C48"/><text x="476" y="180" fill="#8395A6">#6E7C48 枯藤绿</text>
+          <rect x="586" y="66" width="98"  height="96" fill="#D9A05A"/><text x="590" y="180" fill="#8395A6">#D9A05A 直射暖光</text>
+        </g>
+      </svg>
+      <div class="dlbtns">
+        <button onclick="dlPNG('cc8','四季之地_场8_色卡')">下载 PNG</button>
+        <button onclick="dlSVG('cc8','四季之地_场8_色卡')">下载 SVG</button>
+      </div>
+    </div>
+  </div>
+  <div class="groups">
+
+    <div class="grp">
+      <div class="grp-hd"><span class="gn">分镜组 8-1</span><span class="gt">· 山城建立</span><span class="dur">15s</span><span class="tpl">D-1 建立</span></div>
+      <div class="grp-body">
+        <div class="field"><div class="fk">机位·焦段·运镜</div><div class="fv">机位：门内→门外，主观 POV 平视；接超广角大全景俯瞰；<b>14–24mm 超广角 f/11 极深景深</b>（渺小个体 vs 宏大世界）；运镜：<b>固定→匀速缓拉（Steady Dolly Out，跟随呼吸）</b>。</div></div>
+        <div class="field"><div class="fk">分镜描述（0–15s）</div><div class="tl">
+          <span class="t">[0–4s]</span> <span class="act">推门，热浪扑面；阳光过曝——先是纯白，然后颜色缓缓涌入（主观 POV，模拟瞳孔适应）。</span><br>
+          <span class="t">[4–10s]</span> <span class="act">山城大全景：居民楼沿山势层叠，阳台挤阳台，空调外机、枯藤、晾衣杆交错成网；窄巷、梯坎、架空走廊。蝉鸣铺天盖地。</span><br>
+          <span class="t">[10–15s]</span> <span class="act">石阶两侧居民楼门贴白色封条「本户公民处于休眠期｜严禁进入｜安全局」，偶有窗帘后人影——每四户约一户有人。</span>
+        </div></div>
+        <div class="field"><div class="fk">建立场景人群（≥3种）</div><div class="fv">远处梯坎上一名戴罩老人缓慢挪步；一处阳台有人收晾晒衣物；巷口一台机器人静止待机。</div></div>
+        <div class="field"><div class="fk">关键帧强制声明</div><div class="fv">帧①≈2s：纯白过曝帧（瞳孔适应起点）。帧②≈8s：山城层叠大全景成立。末帧≈15s：封条居民楼＋窗后人影，信息读清。</div></div>
+        <div class="field"><div class="fk">限制</div><div class="fv"><b>必须有：</b>过曝白→颜色涌入的曝光适应过程、蝉鸣环境声、封条可辨。<b>不允许：</b>无人机/飞车此时出现；饱和艳丽调色；任何发光特效。<b>状态延续：</b>刘夏夏派工装＋面罩。</div></div>
+        <div class="final">
+          <div class="fhd"><span>成片提示词 · 中文（主）</span><button onclick="cp(this)">复制</button></div>
+          <pre>推开休眠设施大门，正午强烈直射阳光，主观POV平视接超广角大全景。14-24mm超广角，f/11极深景深，固定机位起，匀速缓拉（Steady Dolly Out）。开门瞬间画面过曝纯白，随后颜色缓缓涌入（模拟瞳孔适应）。重庆式赛博山城：居民楼沿陡峭山势层叠，阳台挤着阳台，空调外机、枯藤、晾衣杆、电线交错成网，窄巷、梯坎、架空走廊纵横。石阶两侧居民楼门贴白色封条「本户公民处于休眠期·严禁进入·安全局」，每四户约一户有人居住迹象，偶有窗帘后人影晃动。远处梯坎一戴面罩老人缓慢挪步，阳台上有人收衣。蝉鸣铺天盖地。4800K强直射光，高反差短硬阴影，低饱和暖灰，35mm film颗粒，自然主义纪实。不要无人机、不要艳丽饱和、不要发光特效。</pre>
+          <pre class="en">Pushing open the facility door, harsh midday direct sun, subjective POV cutting to ultra-wide establishing shot. 14-24mm ultra-wide, f/11 very deep focus, locked then Steady Dolly Out. The doorway blows to pure white, then color floods back in (pupil-adaptation). Chongqing-style cyber mountain-city: tenements cascading down steep slopes, balcony crammed against balcony, AC units, dead vines, laundry poles and wires woven into a net; alleys, stair-steps, sky-bridges. Doors along the steps bear white seals "Citizen in hibernation · No entry · Security Bureau," roughly one in four homes shows signs of life, a silhouette shifts behind a curtain. Far off a masked elder shuffles on the steps, someone collects laundry on a balcony. Deafening cicadas. 4800K hard direct light, high-contrast short hard shadows, desaturated warm-grey, 35mm grain, naturalistic. No drones, no vivid saturation, no glow FX.</pre>
+        </div>
+        <div class="link"><span class="lk">跨段衔接卡 → 8-2：</span> 末帧＝封条居民楼全景／服装＝夏派工装＋面罩／光＝正午强直射 4800K／道具＝无／情绪＝麻木＋一线好奇／机位落点＝门口石阶／镜轴＝面向墙角旺财／旺财＝墙角待启动／音＝蝉鸣持续／下一动作＝旺财启动跟随。</div>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-hd"><span class="gn">分镜组 8-2</span><span class="gt">· 旺财登场</span><span class="dur">15s</span><span class="tpl">D-1 标准</span></div>
+      <div class="grp-body">
+        <div class="field"><div class="fk">机位·焦段·运镜</div><div class="fv">机位：墙角低位、微仰拍近景（把旺财拍出"伙伴分量"）→ 平切刘夏中景；<b>35mm f/4 中景深</b>；运镜：<b>匀速横移跟随（Steady Truck，跟随下阶节奏）</b>。</div></div>
+        <div class="field"><div class="fk">分镜描述（0–15s）</div><div class="tl">
+          <span class="t">[0–6s]</span> <span class="act">墙角旺财启动：指示灯从淡蓝转暖黄，左眼接触不良地闪一下。</span><br>
+          <span class="t">[6–11s]</span> <span class="act">刘夏画外音；旺财歪一下头，「嘚嘚嘚」跟上。</span><br>
+          <span class="t">[11–15s]</span> <span class="act">一人一机沿梯坎往下，摄影机横移跟随，背景山城层叠。</span>
+        </div></div>
+        <div class="field"><div class="fk">台词·刘夏画外音（四要素）</div><div class="four">台词「这是父亲给我淘的二手机器人，它不好看，但很管用，是我的启蒙老师兼伙伴，什么都会。」｜触发：旺财启动闪灯约1s后起｜音量/语气：内心独白式，平缓、疲惫里带一点亲昵｜同步肢体：刘夏不看镜头、径直下阶，语气与动作松弛｜停顿节奏：「不好看，｜但很管用」逗号处 0.4s 停顿，末句轻收。</div></div>
+        <div class="field"><div class="fk">关键帧强制声明</div><div class="fv">帧①≈3s：旺财指示灯淡蓝→暖黄、左眼闪。末帧≈15s：一人一机下阶背影，旺财紧随裤脚旁。</div></div>
+        <div class="field"><div class="fk">限制</div><div class="fv"><b>必须有：</b>旺财外壳划痕、左眼指示灯的接触不良闪烁（物理反光，非发光）、"嘚嘚嘚"移动感。<b>不允许：</b>旺财新净无痕；发光/全息效果。<b>状态延续：</b>旺财半米圆头白壳满划痕、左眼闪。</div></div>
+        <div class="final">
+          <div class="fhd"><span>成片提示词 · 中文（主）</span><button onclick="cp(this)">复制</button></div>
+          <pre>休眠设施门口石阶，正午强直射光。墙角低位微仰近景接刘夏平视中景，35mm，中景深，匀速横移跟随（Steady Truck）。墙角旺财（半米高圆头二手伴侣机器人，白壳布满划痕，左眼指示灯接触不良）启动，指示灯从淡蓝转暖黄，左眼闪烁一下（金属外壳上冷色反光点，非发光）。刘夏（夏派工装＋面罩）站在石阶上，画外内心独白。旺财歪一下头，发出"嘚嘚嘚"轻响跟上。一人一机沿陡峭梯坎往下，摄影机匀速横移跟随，背景是层叠山城居民楼。蝉鸣持续。4800K强直射，高反差短硬阴影，低饱和暖灰，35mm film颗粒。不要把机器人做成崭新无痕，不要发光特效、不要全息。</pre>
+          <pre class="en">Facility entrance steps, harsh midday sun. Low slightly-upward close-up of the robot cutting to Liu Xia's eye-level medium, 35mm, medium focus, Steady Truck follow. In the corner, Wang Cai (half-meter round-headed second-hand companion bot, white shell covered in scratches, faulty left-eye indicator) boots up; indicator shifts pale-blue to warm-amber, left eye flickers once (cold specular point on metal, not a glow). Liu Xia (summer work clothes + mask) stands on the steps, interior-monologue voiceover. Wang Cai tilts its head, chirps along. Man and machine descend the steep stair-steps, camera trucks alongside, cascading tenements behind. Cicadas continue. 4800K hard direct light, high-contrast short hard shadows, desaturated warm-grey, 35mm grain. Do not make the robot pristine; no glow FX, no holograms.</pre>
+        </div>
+        <div class="link"><span class="lk">跨段衔接卡 → 9-1：</span> 末帧＝一人一机下阶背影／服装＝夏派工装＋面罩／光＝正午强直射／道具＝无／情绪＝松弛麻木／机位落点＝梯坎下行／镜轴＝面向窄巷／旺财＝紧随裤脚／音＝蝉鸣＋渐入古筝声／下一动作＝穿入窄巷、闻见弹唱。</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+<!-- ===================== 场9 ===================== -->
+<section class="scene">
+  <div class="scene-top">
+    <div class="scene-id">
+      <div class="sc-no">场 9 ·（原场9）</div>
+      <h3>外景 · 窄街 · 日</h3>
+      <div class="desc">窄巷拐角，疯老头弹古筝而唱《玉蝴蝶》，全息女子并肩合唱，无人驻足。刘夏停步静听、投币；老头递旧耳机、赠一片蝉翼与"玉蝴蝶"盒；城管机器人驱赶老头。蝉翼与玉蝴蝶盒——全线信物的埋点。</div>
+      <div class="meta">情境映射 E-邂逅/信物 ／ 3 组 · 8 镜 ／ 光线：缝隙漏光斑，强直射被楼群切成硬光带</div>
+    </div>
+    <div class="cardwrap">
+      <div class="clabel"><span>色卡 · 场9 窄街漏光（信物）</span><span>1400×420</span></div>
+      <svg id="cc9" viewBox="0 0 700 210" xmlns="http://www.w3.org/2000/svg">
+        <rect width="700" height="210" fill="#0F1620"/>
+        <text x="16" y="30" fill="#E7ECF1" font-family="serif" font-size="16" letter-spacing="1">场9 · 窄街 · 蝉翼玉蝴蝶</text>
+        <text x="16" y="48" fill="#586B7E" font-family="monospace" font-size="10">2080 夏派 · 外景 · 缝隙硬光带 · 暖赭巷影</text>
+        <g font-family="monospace" font-size="9">
+          <rect x="16"  y="66" width="106" height="96" fill="#35342F"/><text x="20" y="180" fill="#8395A6">#35342F 巷影</text>
+          <rect x="130" y="66" width="106" height="96" fill="#B57A3E"/><text x="134" y="180" fill="#8395A6">#B57A3E 暖赭墙</text>
+          <rect x="244" y="66" width="106" height="96" fill="#EED9A8"/><text x="248" y="180" fill="#8395A6">#EED9A8 硬光斑</text>
+          <rect x="358" y="66" width="106" height="96" fill="#E7D8A2"/><text x="362" y="180" fill="#8395A6">#E7D8A2 蝉翼微金</text>
+          <rect x="472" y="66" width="106" height="96" fill="#7FA891"/><text x="476" y="180" fill="#8395A6">#7FA891 玉蝴蝶青玉</text>
+          <rect x="586" y="66" width="98"  height="96" fill="#B0503A"/><text x="590" y="180" fill="#8395A6">#B0503A 旧衣暗红</text>
+        </g>
+      </svg>
+      <div class="dlbtns">
+        <button onclick="dlPNG('cc9','四季之地_场9_色卡')">下载 PNG</button>
+        <button onclick="dlSVG('cc9','四季之地_场9_色卡')">下载 SVG</button>
+      </div>
+    </div>
+  </div>
+  <div class="groups">
+
+    <div class="grp">
+      <div class="grp-hd"><span class="gn">分镜组 9-1</span><span class="gt">· 疯老头弹唱</span><span class="dur">15s</span><span class="tpl">D-1 标准</span></div>
+      <div class="grp-body">
+        <div class="field"><div class="fk">机位·焦段·运镜</div><div class="fv">机位：巷内跟拍平视→驻足反打；<b>35mm f/4 中景深</b>（关系＋环境）；运镜：<b>缓慢推镜（Slow Dolly In）</b>逼近老人。</div></div>
+        <div class="field"><div class="fk">分镜描述（0–15s）</div><div class="tl">
+          <span class="t">[0–5s]</span> <span class="act">刘夏与旺财穿窄巷，阳光从头顶晾衣杆电线缝隙漏下、切成硬光带。</span><br>
+          <span class="t">[5–10s]</span> <span class="act">拐角老人弹古筝而唱，一旁全息女子并肩合唱笛声，路人无一驻足。</span><br>
+          <span class="t">[10–15s]</span> <span class="act">刘夏停步静听，弯腰投一枚硬币入盘（盘中仅零星几枚）。</span>
+        </div></div>
+        <div class="field"><div class="fk">台词（四要素）</div><div class="four">台词 刘夏「好听，她呢？」／老头「去『那边』了」｜触发：一段合唱收尾、余音未散时刘夏轻声开口｜音量/语气：刘夏放轻、带真诚好奇；老头沙哑平淡、藏一丝哀｜同步肢体：刘夏视线停在全息女子消散处，老头手仍按弦｜停顿节奏：老头答话前有 1s 沉默。</div></div>
+        <div class="field"><div class="fk">关键帧强制声明</div><div class="fv">帧①≈6s：老头＋全息女子并肩合唱。末帧≈15s：硬币落入盘中、盘里零星几枚。</div></div>
+        <div class="field"><div class="fk">限制</div><div class="fv"><b>必须有：</b>缝隙硬光带、全息女子的半透明并肩、路人无视。<b>不允许：</b>全息做成炫目发光（须半透明、边缘轻微扫描线、无光束）；华丽调色。<b>状态延续：</b>刘夏夏派工装＋面罩，旺财随行。</div></div>
+        <div class="final">
+          <div class="fhd"><span>成片提示词 · 中文（主）</span><button onclick="cp(this)">复制</button></div>
+          <pre>赛博山城窄巷，正午。两楼之间仅一臂宽，头顶晾衣杆电线交错，阳光从缝隙漏下切成硬光带。35mm，中景深，跟拍平视接缓慢推镜（Slow Dolly In）。刘夏（夏派工装＋面罩）与旺财穿巷。拐角一花白长发老人弹古筝而唱，身旁一位半透明全息女子并肩合唱笛声（全息为半透明、边缘极轻微扫描线，非发光、无光束），走过的路人无一驻足。刘夏停步静听，弯腰投一枚硬币入盘，盘中仅零星几枚硬币。暖赭巷墙，深巷影，缝隙硬光斑，低饱和暖灰，35mm film颗粒，自然主义纪实。不要炫目全息光效、不要光束、不要艳丽调色。</pre>
+          <pre class="en">Cyber mountain-city alley, noon. Two buildings an arm's width apart, laundry poles and wires overhead, sunlight leaking through gaps into hard light-bars. 35mm, medium focus, follow then Slow Dolly In. Liu Xia (summer work clothes + mask) and Wang Cai walk through. At the corner a white-haired elder plays guzheng and sings; beside him a semi-transparent holographic woman sings a flute duet (hologram is translucent with faint edge scan-lines, not glowing, no beams); passersby never stop. Liu Xia halts to listen, bends to drop a coin into the tray — only a few coins inside. Warm-ochre alley walls, deep shadow, hard light patches, desaturated warm-grey, 35mm grain, naturalistic. No dazzling hologram FX, no beams, no vivid grading.</pre>
+        </div>
+        <div class="link"><span class="lk">跨段衔接卡 → 9-2：</span> 末帧＝硬币入盘／服装＝工装＋面罩／光＝缝隙硬光带／道具＝古筝、投币盘／情绪＝被乐声牵住／机位＝驻足反打／镜轴＝刘夏↔老头／旺财＝身侧／音＝合唱余音／下一动作＝老头递旧耳机。</div>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-hd"><span class="gn">分镜组 9-2</span><span class="gt">· 蝉翼·夏天的声音</span><span class="dur">15s</span><span class="tpl">D-3 情绪特写</span></div>
+      <div class="grp-body">
+        <div class="field"><div class="fk">物件归属时间线</div><div class="fv">耳机：老头琴盒→[9s前]递给刘夏戴上→保留在耳。蝉翼：脏布上数片→老头捏起一片→[本组末]仍在老头手中（尚未成交，成交在 9-3）。</div></div>
+        <div class="field"><div class="fk">机位·焦段·运镜</div><div class="fv">机位：过肩近景＋微距插入；<b>85mm f/2 浅景深</b>（内心）／蝉翼<b>微距 f/2.8</b>；运镜：<b>固定机位（Lock Frame）</b>。</div></div>
+        <div class="field"><div class="fk">分镜描述（0–15s）</div><div class="tl">
+          <span class="t">[0–5s]</span> <span class="act">老头递旧耳机，刘夏戴上，悠扬蝉鸣与合唱声涌入（主观声画）。</span><br>
+          <span class="t">[5–10s]</span> <span class="act">老头摊开脏布，几片蝉翼；捏起最完整一片朝刘夏晃。</span><br>
+          <span class="t">[10–15s]</span> <span class="act">微距：刘夏对光看蝉翼——透明、精细；他微笑、闭眼听蝉鸣。</span>
+        </div></div>
+        <div class="field"><div class="fk">台词（四要素）</div><div class="four">台词 老头「这叫蝉，夏天的声音……小娃娃，你见过没？」／刘夏「没有，我要了」｜触发：蝉翼晃到刘夏眼前时老头开口；刘夏睁眼后答｜音量/语气：老头带炫示的暖意；刘夏轻而笃定｜同步肢体：刘夏指尖捻蝉翼边缘、对光微侧头｜停顿节奏：刘夏「没有，｜我要了」中间 0.5s。</div></div>
+        <div class="field"><div class="fk">情感具象化（麻木→被触动，≤6步）</div><div class="fv">戴耳机→肩背微松→睫毛下垂闭眼→嘴角上扬→指尖捻蝉翼→对光侧头。（不写"感动/惊喜"字样，只写动作）</div></div>
+        <div class="field"><div class="fk">关键帧强制声明</div><div class="fv">帧①≈3s：耳机戴上、面部松弛。帧②≈8s：蝉翼在老头指间对光半透。末帧≈15s：刘夏闭眼微笑的浅景深特写。</div></div>
+        <div class="field"><div class="fk">限制</div><div class="fv"><b>必须有：</b>蝉翼对光的真实半透质感与叶脉纹理、刘夏闭眼的微表情。<b>不允许：</b>蝉翼自发光；成交动作（留到 9-3）；夸张表情。<b>状态延续：</b>耳机已戴、蝉翼在老头手。</div></div>
+        <div class="final">
+          <div class="fhd"><span>成片提示词 · 中文（主）</span><button onclick="cp(this)">复制</button></div>
+          <pre>窄巷拐角，缝隙硬光。过肩85mm浅景深接蝉翼微距，固定机位。老头从琴盒翻出一副旧耳机递来，刘夏戴上，悠扬蝉鸣与合唱声涌入。老头摊开一块脏布，上面几片大小不一的蝉翼，捏起最完整一片朝刘夏晃了晃。微距特写：刘夏对着缝隙漏下的光看那片蝉翼，透明、精细，可见叶脉般纹理与真实半透质感（自然光透射，非自发光）。他嘴角上扬，闭上眼睛听耳机里的蝉鸣，肩背微松。85mm f/2背景奶化，低饱和暖灰，35mm film颗粒，情绪克制内敛。不要蝉翼发光、不要炫光、不要夸张表情。</pre>
+          <pre class="en">Alley corner, hard gap-light. Over-shoulder 85mm shallow focus cutting to cicada-wing macro, locked frame. The elder pulls old earphones from his case and hands them over; Liu Xia puts them on, a soaring cicada-and-choir sound floods in. The elder unfolds a grubby cloth with several cicada wings and lifts the most intact one, waggling it toward Liu Xia. Macro: Liu Xia holds the wing up to the leaking light — transparent, delicate, visible vein-like texture and real translucency (light transmitting through, not self-lit). His mouth curves up, he closes his eyes to the cicada song in the earphones, shoulders easing. 85mm f/2 creamy background, desaturated warm-grey, 35mm grain, restrained emotion. No glowing wing, no lens flare, no exaggerated expression.</pre>
+        </div>
+        <div class="link"><span class="lk">跨段衔接卡 → 9-3：</span> 末帧＝刘夏闭眼微笑特写／耳机＝已戴／蝉翼＝老头手中（未成交）／光＝缝隙硬光／情绪＝被触动／机位＝过肩／镜轴＝刘夏↔老头／旺财＝身侧／音＝耳机蝉鸣／下一动作＝掏钱成交、赠盒。</div>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-hd"><span class="gn">分镜组 9-3</span><span class="gt">· 赠盒·城管驱赶</span><span class="dur">15s</span><span class="tpl">D-1 标准</span></div>
+      <div class="grp-body">
+        <div class="field"><div class="fk">物件归属时间线</div><div class="fv">蝉翼：老头手→[3s]装入玉蝴蝶盒→连盒赠予刘夏→[末]揣入刘夏口袋。耳机：刘夏耳→[老头收摊时]取回塞入琴盒。</div></div>
+        <div class="field"><div class="fk">机位·焦段·运镜</div><div class="fv">机位：中景双人→切城管机器人平视；<b>35mm f/4</b> ／盒子插入<b>微距</b>；运镜：<b>固定→匀速横移（Steady Truck）</b>随城管入巷。</div></div>
+        <div class="field"><div class="fk">分镜描述（0–15s）</div><div class="tl">
+          <span class="t">[0–5s]</span> <span class="act">刘夏掏钱；老头取一"玉蝴蝶"盒把蝉翼装入，连盒递给刘夏「送给识货人」。</span><br>
+          <span class="t">[5–10s]</span> <span class="act">巷口城管机器人拐入，屏幕滚动市容条例，径直走向老头「涉嫌销售伪造制品」。</span><br>
+          <span class="t">[10–15s]</span> <span class="act">老头收布、取回刘夏耳机塞回琴盒，赤脚离去；刘夏捏蝉翼对光看、揣进口袋。</span>
+        </div></div>
+        <div class="field"><div class="fk">台词（四要素）</div><div class="four">台词 老头「这个盒子送你了，送给识货人」／城管「您涉嫌销售伪造制品。请立即离开。」／老头「行，你说假就假吧。你也不是真的。」｜触发：赠盒接城管拐入；老头临走回一句｜音量/语气：老头前句温、后句淡而讥；城管机械无起伏｜同步肢体：老头收布甩吉他站起、赤脚走；刘夏低头看盒｜停顿节奏：老头末句字字慢、不回头。</div></div>
+        <div class="field"><div class="fk">关键帧强制声明</div><div class="fv">帧①≈4s：蝉翼装入玉蝴蝶盒、盒到刘夏手（信物核心）。帧②≈8s：城管机器人径直逼近老头。末帧≈15s：刘夏捏蝉翼对光、动作是揣入口袋。</div></div>
+        <div class="field"><div class="fk">限制</div><div class="fv"><b>必须有：</b>玉蝴蝶盒纹样清晰可辨、城管机器人白壳方体屏幕滚动、老头赤脚。<b>不允许：</b>盒子/机器人发光特效；打斗。<b>状态延续：</b>末帧蝉翼入刘夏口袋、玉蝴蝶盒随身。</div></div>
+        <div class="final">
+          <div class="fhd"><span>成片提示词 · 中文（主）</span><button onclick="cp(this)">复制</button></div>
+          <pre>窄巷拐角，缝隙硬光。中景双人接城管机器人平视，盒子微距插入，固定接匀速横移（Steady Truck）。刘夏掏钱，老头取出一个"玉蝴蝶"雕花纹样的小盒，把蝉翼小心装入，连盒递给刘夏。巷口一台城管机器人（方体半人高白壳，胸口小屏幕滚动市容条例）拐入，径直走向老头。老头不慌不忙收起脏布，取回刘夏耳机塞回琴盒，吉他往背上一甩，赤脚离去（拖鞋都没穿）。刘夏捏着那片蝉翼对光看一下，揣进口袋。玉蝴蝶盒雕花纹样清晰可辨。暖赭巷影，缝隙硬光斑，低饱和暖灰，35mm film颗粒。不要盒子或机器人发光、不要打斗、不要炫光。</pre>
+          <pre class="en">Alley corner, hard gap-light. Two-shot medium cutting to the enforcement bot, box macro insert, locked then Steady Truck. Liu Xia pays; the elder takes out a small "jade-butterfly" carved box, tucks the cicada wing inside, and hands over the whole box. A city-enforcement robot (boxy, half-height, white shell, chest screen scrolling municipal codes) rounds the alley mouth and walks straight at the elder. Unhurried, the elder folds the cloth, retrieves Liu Xia's earphones into his case, slings the guitar over his back and leaves barefoot (not even slippers). Liu Xia holds the wing up to the light, then slips it into his pocket. The jade-butterfly carving is clearly legible. Warm-ochre shadow, hard light patches, desaturated warm-grey, 35mm grain. No glowing box or robot, no fighting, no flare.</pre>
+        </div>
+        <div class="link"><span class="lk">跨段衔接卡 → 10-1：</span> 末帧＝蝉翼揣入口袋／道具＝玉蝴蝶盒＋蝉翼（随身）／服装＝工装＋面罩／光＝缝隙硬光／情绪＝若有所得／机位＝巷内／旺财＝身侧（指示灯刚异常闪过）／音＝城管退场脚步／下一场＝胖子追来、同往凉水摊。</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+<!-- ===================== 场10 ===================== -->
+<section class="scene">
+  <div class="scene-top">
+    <div class="scene-id">
+      <div class="sc-no">场 10 ·（原场10）</div>
+      <h3>外景 · 凉水摊 · 日</h3>
+      <div class="desc">梯坎尽头岔口，大树下凉水摊。胖子要两杯冰水，摊主说冰不够涨价、压低声音道出物资供上层。刘夏拉下面罩喝冰水、露出整张脸，望白晃晃天空；胖子看手机约今晚探洞。</div>
+      <div class="meta">情境映射 E-世界观/日常 ／ 2 组 · 5 镜 ／ 光线：树荫斑驳＋顶部过曝天光</div>
+    </div>
+    <div class="cardwrap">
+      <div class="clabel"><span>色卡 · 场10 凉水摊树荫</span><span>1400×420</span></div>
+      <svg id="cc10" viewBox="0 0 700 210" xmlns="http://www.w3.org/2000/svg">
+        <rect width="700" height="210" fill="#0F1620"/>
+        <text x="16" y="30" fill="#E7ECF1" font-family="serif" font-size="16" letter-spacing="1">场10 · 凉水摊 · 冰水</text>
+        <text x="16" y="48" fill="#586B7E" font-family="monospace" font-size="10">2080 夏派 · 外景 · 树荫斑驳 · 顶部过曝天光</text>
+        <g font-family="monospace" font-size="9">
+          <rect x="16"  y="66" width="106" height="96" fill="#EAE7DF"/><text x="20" y="180" fill="#8395A6">#EAE7DF 过曝天白</text>
+          <rect x="130" y="66" width="106" height="96" fill="#5C6C46"/><text x="134" y="180" fill="#8395A6">#5C6C46 树荫绿</text>
+          <rect x="244" y="66" width="106" height="96" fill="#B6D4DA"/><text x="248" y="180" fill="#8395A6">#B6D4DA 冰蓝</text>
+          <rect x="358" y="66" width="106" height="96" fill="#9A948B"/><text x="362" y="180" fill="#8395A6">#9A948B 铁皮灰</text>
+          <rect x="472" y="66" width="106" height="96" fill="#B4714E"/><text x="476" y="180" fill="#8395A6">#B4714E 晒红肤</text>
+          <rect x="586" y="66" width="98"  height="96" fill="#D9C48A"/><text x="590" y="180" fill="#8395A6">#D9C48A 塑料杯暖</text>
+        </g>
+      </svg>
+      <div class="dlbtns">
+        <button onclick="dlPNG('cc10','四季之地_场10_色卡')">下载 PNG</button>
+        <button onclick="dlSVG('cc10','四季之地_场10_色卡')">下载 SVG</button>
+      </div>
+    </div>
+  </div>
+  <div class="groups">
+
+    <div class="grp">
+      <div class="grp-hd"><span class="gn">分镜组 10-1</span><span class="gt">· 凉水摊·涨价</span><span class="dur">15s</span><span class="tpl">D-1 标准</span></div>
+      <div class="grp-body">
+        <div class="field"><div class="fk">机位·焦段·运镜</div><div class="fv">机位：摊前平视双人中景→摊主近景；<b>35mm f/4 中景深</b>；运镜：<b>固定机位（Lock Frame）</b>。</div></div>
+        <div class="field"><div class="fk">分镜描述（0–15s）</div><div class="tl">
+          <span class="t">[0–5s]</span> <span class="act">梯坎尽头岔口，大树下凉水摊：铁皮推车、塑料凳、手写纸牌。胖子上前。</span><br>
+          <span class="t">[5–15s]</span> <span class="act">胖子「两杯冰水」；摊主（晒得黑红、面罩挂下巴）「今年冰不够，涨了」，压低声音道出物资只供上层。</span>
+        </div></div>
+        <div class="field"><div class="fk">台词（四要素）</div><div class="four">台词 胖子「两杯冰水。」「喝水都要加价？」／摊主「今年冰不够，涨了。」「春派水管冻裂，维修物资全供给上层居住区，我们连净水滤芯都配不到，不涨价根本撑不下去。」｜触发：胖子递钱时摊主答；后半句压低｜音量/语气：胖子抱怨式；摊主前句硬气、后句压低带无奈｜同步肢体：摊主一边舀水一边说，压低句时四下瞟一眼｜停顿节奏：摊主压低段语速加快、贴近说。</div></div>
+        <div class="field"><div class="fk">关键帧强制声明</div><div class="fv">帧①≈3s：大树下凉水摊全貌、手写涨价纸牌。末帧≈15s：摊主压低声音、四下张望的近景。</div></div>
+        <div class="field"><div class="fk">限制</div><div class="fv"><b>必须有：</b>树荫斑驳光、手写纸牌、摊主晒黑红肤色。<b>不允许：</b>发光特效；夏日调成清爽小清新（须闷热感）。<b>状态延续：</b>刘夏胖子均戴面罩到下巴。</div></div>
+        <div class="final">
+          <div class="fhd"><span>成片提示词 · 中文（主）</span><button onclick="cp(this)">复制</button></div>
+          <pre>梯坎尽头岔口，大树下凉水摊，正午闷热。铁皮推车、塑料凳、手写纸牌。35mm，中景深，固定机位，摊前平视双人中景接摊主近景。胖子（25岁胖，背心湿透，面罩挂下巴）上前「两杯冰水」。摊主（晒得黑红的中年女人，面罩挂在下巴上）「今年冰不够，涨了」，一边舀水一边压低声音，四下瞟一眼，说物资只供上层居住区、连净水滤芯都配不到。树荫斑驳光落在推车与两人身上，顶部天光过曝。低饱和暖灰，闷热潮湿的夏日空气感，35mm film颗粒，自然主义纪实。不要发光特效、不要小清新清爽调色。</pre>
+          <pre class="en">Junction at the top of the stairs, a cold-drink stall under a big tree, sweltering noon. Tin cart, plastic stools, hand-written sign. 35mm, medium focus, locked frame, eye-level two-shot cutting to the vendor. The fat friend (25, sweat-soaked tank top, mask on chin) steps up: "Two iced waters." The vendor (sun-darkened middle-aged woman, mask on chin) says "Ice is short this year, price is up," scooping water while lowering her voice and glancing around, saying supplies only go to the upper districts. Dappled tree-shade falls on the cart and the two men, blown-out sky overhead. Desaturated warm-grey, humid sweltering summer air, 35mm grain, naturalistic. No glow FX, no fresh/clean grading.</pre>
+        </div>
+        <div class="link"><span class="lk">跨段衔接卡 → 10-2：</span> 末帧＝摊主压低声近景／服装＝二人面罩挂下巴／光＝树荫斑驳＋过曝天光／道具＝塑料杯冰水（即将递出）／情绪＝日常疲惫／机位＝摊前／镜轴＝面向摊主／旺财＝脚边／音＝蝉鸣＋舀水声／下一动作＝刘夏摘罩喝水。</div>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-hd"><span class="gn">分镜组 10-2</span><span class="gt">· 摘罩喝冰水</span><span class="dur">15s</span><span class="tpl">D-3 情绪特写</span></div>
+      <div class="grp-body">
+        <div class="field"><div class="fk">机位·焦段·运镜</div><div class="fv">机位：刘夏侧 3/4 近景→仰角望天空；<b>50mm f/2.8</b> ／望天用<b>35mm 深景</b>；运镜：<b>固定→极缓慢推镜（Slow Dolly In）</b>贴近喝水的脸。</div></div>
+        <div class="field"><div class="fk">分镜描述（0–15s）</div><div class="tl">
+          <span class="t">[0–6s]</span> <span class="act">刘夏把面罩拉到下巴，接过冰水喝一口，露出整张脸；胖子也拉下喝。</span><br>
+          <span class="t">[6–11s]</span> <span class="act">刘夏抬头望天——白晃晃的，什么声音都没有（蝉鸣短暂抽空）。</span><br>
+          <span class="t">[11–15s]</span> <span class="act">胖子看一眼手机信息，拍拍刘夏。</span>
+        </div></div>
+        <div class="field"><div class="fk">台词（四要素）</div><div class="four">台词 胖子「探洞计划提前了，今晚见！」｜触发：刘夏收回望天视线的瞬间｜音量/语气：胖子压着兴奋的小声、神秘｜同步肢体：胖子边看手机边用手背拍刘夏胸口｜停顿节奏：一句连读、末尾上扬。</div></div>
+        <div class="field"><div class="fk">情感具象化（麻木中的短暂真实）</div><div class="fv">拉下面罩→冰水入口的一瞬闭眼→喉结滚动→仰头→望向过曝空茫的天→眼神放空。（不写"渴望/空虚"）</div></div>
+        <div class="field"><div class="fk">关键帧强制声明</div><div class="fv">帧①≈4s：面罩拉到下巴、露整张脸喝水。帧②≈9s：仰角望白晃晃天空的空镜＋刘夏面部。末帧≈15s：胖子拍肩、刘夏视线收回。</div></div>
+        <div class="field"><div class="fk">限制</div><div class="fv"><b>必须有：</b>摘罩露脸的"短暂真实"、望天时环境声抽空的留白。<b>不允许：</b>发光特效；天空做成蓝天白云唯美（须过曝空茫）。<b>状态延续：</b>面罩拉到下巴（未摘除）。</div></div>
+        <div class="final">
+          <div class="fhd"><span>成片提示词 · 中文（主）</span><button onclick="cp(this)">复制</button></div>
+          <pre>凉水摊前，正午闷热。50mm侧3/4近景接35mm仰角望天，固定接极缓慢推镜（Slow Dolly In）。刘夏把面罩拉到下巴，接过塑料杯冰水喝一口，露出整张脸，冰水入口一瞬闭眼、喉结滚动；胖子也拉下面罩喝。刘夏抬头望天，天空白晃晃过曝、空茫一片，此刻环境蝉鸣短暂抽空、只剩留白。随后胖子看一眼手机信息，用手背拍拍刘夏胸口。树荫斑驳，顶部天光过曝，低饱和暖灰，闷热夏日空气，35mm film颗粒，情绪克制。不要发光特效，天空不要做成蓝天白云唯美，保持过曝空茫。</pre>
+          <pre class="en">At the cold-drink stall, sweltering noon. 50mm side 3/4 close-up cutting to 35mm upward sky shot, locked then barely-perceptible Slow Dolly In. Liu Xia pulls his mask down to his chin, takes a sip of iced water from a plastic cup, whole face exposed, eyes briefly closing as the cold hits, throat bobbing; the friend pulls his mask down too. Liu Xia looks up — the sky is a blown-out blank white, and the ambient cicadas briefly drop to silence. Then the friend glances at a phone message and taps Liu Xia's chest with the back of his hand. Dappled shade, blown-out sky overhead, desaturated warm-grey, humid summer air, 35mm grain, restrained emotion. No glow FX; do not beautify the sky into blue-sky-white-clouds, keep it blown-out and blank.</pre>
+        </div>
+        <div class="link"><span class="lk">跨段衔接卡 → 11-1：</span> 末帧＝胖子拍肩、刘夏视线收回／服装＝面罩拉下巴／光＝树荫＋过曝天／道具＝塑料杯／情绪＝短暂真实后归于日常／机位＝摊前／音＝蝉鸣恢复／下一场＝刘夏戴罩上轻轨／镜轴＝转向轻轨方向／旺财＝随行。</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+<!-- ===================== 场11 ===================== -->
+<section class="scene">
+  <div class="scene-top">
+    <div class="scene-id">
+      <div class="sc-no">场 11 ·（原场11）</div>
+      <h3>内景 · 轻轨车厢 · 日</h3>
+      <div class="desc">半空轻轨，刘夏戴罩靠窗，旺财蹲脚边。窗外白色弧形灭刑中心：长队、抱头痛哭、电子脚镣、回收机器人阵列、循环花海广告。刘夏指尖贴玻璃、指节收紧，画外「妈，你真的在里面吗？」</div>
+      <div class="meta">情境映射 E-窗景/内心 ／ 1 组 · 3 镜 ／ 光线：车厢冷灰＋窗外过曝白弧＋广告金（反讽）</div>
+    </div>
+    <div class="cardwrap">
+      <div class="clabel"><span>色卡 · 场11 轻轨望灭刑中心</span><span>1400×420</span></div>
+      <svg id="cc11" viewBox="0 0 700 210" xmlns="http://www.w3.org/2000/svg">
+        <rect width="700" height="210" fill="#0F1620"/>
+        <text x="16" y="30" fill="#E7ECF1" font-family="serif" font-size="16" letter-spacing="1">场11 · 轻轨 · 灭刑中心</text>
+        <text x="16" y="48" fill="#586B7E" font-family="monospace" font-size="10">2080 · 内景冷灰 vs 窗外白弧＋广告金（反讽对置）</text>
+        <g font-family="monospace" font-size="9">
+          <rect x="16"  y="66" width="106" height="96" fill="#6C7880"/><text x="20" y="180" fill="#8395A6">#6C7880 车厢冷灰</text>
+          <rect x="130" y="66" width="106" height="96" fill="#E7E9EB"/><text x="134" y="180" fill="#8395A6">#E7E9EB 窗外白弧</text>
+          <rect x="244" y="66" width="106" height="96" fill="#E0A83C"/><text x="248" y="180" fill="#8395A6">#E0A83C 花海广告金</text>
+          <rect x="358" y="66" width="106" height="96" fill="#5B7A92"/><text x="362" y="180" fill="#8395A6">#5B7A92 脚镣冷蓝</text>
+          <rect x="472" y="66" width="106" height="96" fill="#C8CDCE"/><text x="476" y="180" fill="#8395A6">#C8CDCE 玻璃反光</text>
+          <rect x="586" y="66" width="98"  height="96" fill="#A94E3A"/><text x="590" y="180" fill="#8395A6">#A94E3A 告别暖红</text>
+        </g>
+      </svg>
+      <div class="dlbtns">
+        <button onclick="dlPNG('cc11','四季之地_场11_色卡')">下载 PNG</button>
+        <button onclick="dlSVG('cc11','四季之地_场11_色卡')">下载 SVG</button>
+      </div>
+    </div>
+  </div>
+  <div class="groups">
+
+    <div class="grp">
+      <div class="grp-hd"><span class="gn">分镜组 11-1</span><span class="gt">· 掠过灭刑中心</span><span class="dur">15s</span><span class="tpl">D-3 情绪特写</span></div>
+      <div class="grp-body">
+        <div class="field"><div class="fk">机位·焦段·运镜</div><div class="fv">机位：车厢内平视中景→窗外景（过窗玻璃）→指尖贴玻璃特写；<b>35mm f/4</b> 车厢 ／ 窗外用<b>50mm</b> ／ 指尖<b>85mm f/2 浅景深</b>；运镜：<b>固定机位（Lock Frame）</b>（借轻轨自身移动造成窗外横向流动，摄影机不动）。</div></div>
+        <div class="field"><div class="fk">分镜描述（0–15s）</div><div class="tl">
+          <span class="t">[0–5s]</span> <span class="act">半空轻轨车厢，稀疏几人都戴罩；刘夏戴罩靠窗，旺财蹲脚边，窗外楼群向后掠过。</span><br>
+          <span class="t">[5–11s]</span> <span class="act">窗外远处白色弧形灭刑中心：门口长队、家人抱头痛哭、有人戴电子脚镣排队进入；侧旁停靠区十几台回收机器人整齐排列；外墙循环金色花海广告。</span><br>
+          <span class="t">[11–15s]</span> <span class="act">刘夏指尖贴玻璃、盯着花海广告，指节收紧；旺财指示灯同步忽明忽暗、轻蹭他裤腿。</span>
+        </div></div>
+        <div class="field"><div class="fk">台词·刘夏画外音（四要素）</div><div class="four">台词「妈，你真的在里面吗？」｜触发：指节收紧后约1s｜音量/语气：气声、几乎耳语，压着的痛｜同步肢体：视线钉在广告上不动，只有指节收紧｜停顿节奏：「妈，｜你真的在里面吗」中间 0.6s 迟疑。</div></div>
+        <div class="field"><div class="fk">情感具象化（麻木下的隐痛）</div><div class="fv">靠窗放空→窗外景映入→指尖贴玻璃→指节收紧→旺财蹭腿（唯一回应）。（不写"思念/痛苦"）</div></div>
+        <div class="field"><div class="fk">关键帧强制声明</div><div class="fv">帧①≈7s：窗外白弧灭刑中心＋长队＋金色花海广告成立。帧②≈12s：指尖贴玻璃、指节收紧特写。末帧≈15s：旺财指示灯忽明忽暗、蹭裤腿。</div></div>
+        <div class="field"><div class="fk">限制</div><div class="fv"><b>必须有：</b>冷灰车厢与窗外过曝白弧＋广告金的反讽对置、指节收紧、旺财蹭腿。<b>不允许：</b>广告花海做成美丽治愈（须刺眼虚假）；摄影机横移（只借轻轨移动）；发光特效。<b>状态延续：</b>刘夏戴罩、旺财脚边。</div></div>
+        <div class="final">
+          <div class="fhd"><span>成片提示词 · 中文（主）</span><button onclick="cp(this)">复制</button></div>
+          <pre>半空中的轻轨车厢内，日。35mm平视中景，窗外50mm，指尖85mm f/2浅景深；固定机位，靠轻轨自身行驶让窗外楼群横向流动（摄影机不动）。车厢稀疏几人都戴面罩，刘夏（戴面罩）靠窗坐，旺财蹲脚边。窗外远处一座白色弧形建筑——灭刑中心，门口排着长队，有家人抱头痛哭，有人戴电子脚镣排队进入；侧旁停靠区十几台被回收的伴侣机器人整齐排列；弧形外墙循环播放刺眼的金色花海广告（虚假治愈感，与现实反讽对置）。刘夏指尖贴上车窗玻璃，盯着花海广告，指节收紧。旺财指示灯同步忽明忽暗，轻轻蹭他裤腿。车厢冷灰，窗外过曝白与广告金，低饱和，35mm film颗粒，压抑。不要把花海广告做成美丽治愈，要刺眼虚假；不要摄影机横移，不要发光特效。</pre>
+          <pre class="en">Inside a mid-air light-rail car, day. 35mm eye-level medium, 50mm through-window, 85mm f/2 shallow for the fingertip; locked camera, letting the train's own motion stream the buildings sideways (camera still). A few sparse masked passengers; Liu Xia (masked) sits by the window, Wang Cai crouched at his feet. Far outside, a white arc building — the execution center — a long queue at its doors, families weeping in each other's arms, people in electronic ankle-cuffs filing in; a bay beside it holds a dozen recycled companion bots in a neat row; its curved facade loops a garish golden flower-sea ad (fake, healing-toned, ironically against the reality). Liu Xia presses a fingertip to the glass, staring at the ad, knuckle tightening. Wang Cai's indicator flickers in sync and nudges his trouser leg. Cold-grey car, blown-out white and ad-gold outside, desaturated, 35mm grain, oppressive. Do not beautify the flower ad — keep it garish and false; no camera trucking, no glow FX.</pre>
+        </div>
+        <div class="link"><span class="lk">跨段衔接卡 → 12-1：</span> 末帧＝旺财蹭腿、刘夏凝窗／服装＝面罩／光＝车厢冷灰＋窗外白弧／道具＝无／情绪＝隐痛／机位＝车厢内／音＝轻轨行驶低频＋画外余音／下一场＝下轻轨、员工通道进休眠设施／镜轴＝转向塔楼／旺财＝随行。</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+<!-- ===================== 场12 ===================== -->
+<section class="scene">
+  <div class="scene-top">
+    <div class="scene-id">
+      <div class="sc-no">场 12 ·（原场12）</div>
+      <h3>内景 · 休眠设施（另一辖区）走廊 · 日</h3>
+      <div class="desc">刘夏下轻轨进塔楼员工通道，清洁窄床与电极接口；画外道出"切片采走、身体推走"。瞥见隔壁床头一滴血渍，掏芯片开门越界擦拭，被主管机器人斥"违规"；底层屏一闪——历年灭刑者名单里有「苏吟」，他愣住含泪。</div>
+      <div class="meta">情境映射 E-劳作/钩子 ／ 3 组 · 8 镜 ／ 光线：临床白顶光＋淡蓝指示＋一滴血红（唯一暖点是伤口）</div>
+    </div>
+    <div class="cardwrap">
+      <div class="clabel"><span>色卡 · 场12 清洁走廊（血渍红）</span><span>1400×420</span></div>
+      <svg id="cc12" viewBox="0 0 700 210" xmlns="http://www.w3.org/2000/svg">
+        <rect width="700" height="210" fill="#0F1620"/>
+        <text x="16" y="30" fill="#E7ECF1" font-family="serif" font-size="16" letter-spacing="1">场12 · 切片走廊 · 母亲名</text>
+        <text x="16" y="48" fill="#586B7E" font-family="monospace" font-size="10">2080 · 内景 · 临床白＋淡蓝指示 · 血渍红为唯一情绪暖点</text>
+        <g font-family="monospace" font-size="9">
+          <rect x="16"  y="66" width="106" height="96" fill="#E3E6E7"/><text x="20" y="180" fill="#8395A6">#E3E6E7 临床白</text>
+          <rect x="130" y="66" width="106" height="96" fill="#9FC1D4"/><text x="134" y="180" fill="#8395A6">#9FC1D4 淡蓝指示</text>
+          <rect x="244" y="66" width="106" height="96" fill="#7B838A"/><text x="248" y="180" fill="#8395A6">#7B838A 金属冷灰</text>
+          <rect x="358" y="66" width="106" height="96" fill="#4A555E"/><text x="362" y="180" fill="#8395A6">#4A555E 门缝暗</text>
+          <rect x="472" y="66" width="106" height="96" fill="#C9A94C"/><text x="476" y="180" fill="#8395A6">#C9A94C 屏名微光</text>
+          <rect x="586" y="66" width="98"  height="96" fill="#A5382C"/><text x="590" y="180" fill="#E7ECF1">#A5382C 血渍红</text>
+        </g>
+      </svg>
+      <div class="dlbtns">
+        <button onclick="dlPNG('cc12','四季之地_场12_色卡')">下载 PNG</button>
+        <button onclick="dlSVG('cc12','四季之地_场12_色卡')">下载 SVG</button>
+      </div>
+    </div>
+  </div>
+  <div class="groups">
+
+    <div class="grp">
+      <div class="grp-hd"><span class="gn">分镜组 12-1</span><span class="gt">· 清洁劳作</span><span class="dur">15s</span><span class="tpl">D-1 标准</span></div>
+      <div class="grp-body">
+        <div class="field"><div class="fk">机位·焦段·运镜</div><div class="fv">机位：塔楼外观大全景→走廊纵深→擦拭近景；<b>塔楼 24mm f/11</b> ／走廊<b>28mm 深景</b> ／擦拭<b>50mm</b>；运镜：<b>固定→极缓慢推镜（Slow Dolly In）</b>入走廊纵深。</div></div>
+        <div class="field"><div class="fk">分镜描述（0–15s）</div><div class="tl">
+          <span class="t">[0–5s]</span> <span class="act">塔楼外观：远看一根白针，近看整面无缝弧墙；刘夏从侧面员工通道刷卡进入、换工装、面罩拉到下巴。</span><br>
+          <span class="t">[5–10s]</span> <span class="act">底层长走廊，两侧白门编号 0001 起排；窄床、床头电极接口与数据线、床面液痕。</span><br>
+          <span class="t">[10–15s]</span> <span class="act">刘夏推清洁车入一间，床空、枕有压痕；他擦电极接口、扶手、床沿，每道弧线对称；旺财门口静候。</span>
+        </div></div>
+        <div class="field"><div class="fk">关键帧强制声明</div><div class="fv">帧①≈3s：塔楼无缝弧墙外观。帧②≈8s：白门 0001 起排的走廊纵深。末帧≈15s：擦拭床沿、旺财门口静候。</div></div>
+        <div class="field"><div class="fk">限制</div><div class="fv"><b>必须有：</b>塔楼无接缝弧墙、门牌 0001 编号、床面液痕、重复劳作的机械感。<b>不允许：</b>任何暖色情绪光（此段冷临床）；发光特效。<b>状态延续：</b>面罩拉到下巴、夏派工装、旺财随行。</div></div>
+        <div class="final">
+          <div class="fhd"><span>成片提示词 · 中文（主）</span><button onclick="cp(this)">复制</button></div>
+          <pre>四季之地塔楼下层休眠设施走廊，日。塔楼24mm f/11大全景接28mm走廊深景与50mm擦拭近景，固定接极缓慢推镜（Slow Dolly In）。塔楼外观远看是一根白色的针，近看是整面无接缝弧形白墙。刘夏（夏派工装，面罩拉到下巴）从侧面员工通道刷卡进入。底层长走廊，两侧白色小门编号从0001往上排，每间一张窄床，床头有电极接口与数据线，床面有液体痕迹。刘夏推清洁车进入一间，床上无人、枕头有压痕，他拿抹布擦电极接口、扶手、床沿，每道弧线对称、动作机械重复。旺财站在门口安静等候。临床白顶光，淡蓝指示灯，冷金属灰，低饱和，35mm film颗粒，冷峻压抑。不要任何暖色情绪光，不要发光特效。</pre>
+          <pre class="en">Lower-level hibernation corridor of the Four-Seasons tower, day. Tower 24mm f/11 wide cutting to 28mm deep corridor and 50mm wiping close-up, locked then barely-perceptible Slow Dolly In. From afar the tower is a white needle; up close, one seamless curved white wall. Liu Xia (summer work clothes, mask on chin) badges in through a side staff passage. A long lower corridor, white doors numbered from 0001 up, each with a narrow bed, electrode ports and data cables at the headboard, fluid stains on the bed surface. Liu Xia wheels a cleaning cart into one — empty bed, dented pillow — and wipes the electrode port, the rail, the bed edge, every arc symmetrical, mechanically repetitive. Wang Cai waits quietly at the door. Clinical white toplight, pale-blue indicators, cold metal grey, desaturated, 35mm grain, austere and oppressive. No warm emotional light, no glow FX.</pre>
+        </div>
+        <div class="link"><span class="lk">跨段衔接卡 → 12-2：</span> 末帧＝擦床沿、旺财门口／服装＝工装＋面罩下巴／光＝临床白＋淡蓝／道具＝清洁车抹布／情绪＝麻木劳作／机位＝隔间内／音＝画外独白起／镜轴＝转向隔壁区域／旺财＝门口／下一动作＝瞥见血渍、掏芯片开门。</div>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-hd"><span class="gn">分镜组 12-2</span><span class="gt">· 越界擦血渍</span><span class="dur">15s</span><span class="tpl">D-2 动作/冲突</span></div>
+      <div class="grp-body">
+        <div class="field"><div class="fk">物件归属时间线</div><div class="fv">芯片：刘夏衣内→[6s]掏出操作→开门后收回。血渍：隔壁床头一滴→贯穿本组的唯一暖点/情绪焦点。</div></div>
+        <div class="field"><div class="fk">机位·焦段·运镜</div><div class="fv">机位：血渍微距→刘夏近景→主管机器人走廊平视；<b>血渍微距 f/2.8</b> ／人物<b>35mm f/4</b>；运镜：<b>固定机位（Lock Frame）</b>（冲突靠表演不靠运镜）。</div></div>
+        <div class="field"><div class="fk">分镜描述（0–15s）</div><div class="tl">
+          <span class="t">[0–5s]</span> <span class="act">正要离开，瞥见隔壁区域床头一滴淡淡血渍，眉头微蹙（微距：白床面上唯一的红）。</span><br>
+          <span class="t">[5–10s]</span> <span class="act">从衣内掏出芯片一顿操作，门开；进门用力擦拭血渍。</span><br>
+          <span class="t">[10–15s]</span> <span class="act">主管机器人走廊经过发出斥责；刘夏顶回去。</span>
+        </div></div>
+        <div class="field"><div class="fk">台词（四要素）</div><div class="four">台词 主管机器人「刘夏，这个区域是张顺服务，你越界了！」／刘夏「太脏！加钱给我擦！」｜触发：刘夏正用力擦时机器人经过｜音量/语气：机器人机械平直无起伏；刘夏烦躁、硬顶、带堵｜同步肢体：刘夏不停手、头也不回地顶嘴｜停顿节奏：刘夏「太脏！｜加钱给我擦！」两句短促、语气冲。</div></div>
+        <div class="field"><div class="fk">关键帧强制声明</div><div class="fv">帧①≈3s：白床面上一滴血渍的微距（唯一的红）。帧②≈7s：掏芯片操作、门开。末帧≈15s：刘夏用力擦拭、扭头顶嘴的近景。</div></div>
+        <div class="field"><div class="fk">限制</div><div class="fv"><b>必须有：</b>血渍作为全场唯一暖红点、芯片开门的越界动作、刘夏烦躁的顶嘴。<b>不允许：</b>血渍夸张成血泊；打斗；发光特效。<b>状态延续：</b>芯片用后收回、面罩下巴、旺财在外。</div></div>
+        <div class="final">
+          <div class="fhd"><span>成片提示词 · 中文（主）</span><button onclick="cp(this)">复制</button></div>
+          <pre>休眠设施走廊隔间，日，临床白冷光。血渍微距接35mm人物近景与主管机器人走廊平视，固定机位。刘夏正要离开，瞥见隔壁区域床头有一滴淡淡血渍，眉头微蹙——微距：临床白床面上唯一的一点暗红。他从衣服内掏出一个芯片，一顿操作，隔壁门开；进门用力擦拭血渍。一台主管机器人从走廊经过发出斥责，刘夏不停手、扭头顶嘴。临床白顶光、淡蓝指示灯、冷金属灰，唯一的暖色是那滴血渍红，低饱和，35mm film颗粒，冷峻。不要把血渍夸张成血泊，不要打斗，不要发光特效。</pre>
+          <pre class="en">A corridor cell in the hibernation facility, day, clinical white light. Blood-stain macro cutting to 35mm character close-up and the supervisor bot at eye level in the corridor, locked frame. About to leave, Liu Xia glimpses a faint blood stain at the headboard of the adjacent zone, brow knitting — macro: the single dark-red point on the clinical white bed. He pulls a chip from inside his clothes, works it briefly, the adjacent door opens; he enters and scrubs hard at the stain. A supervisor robot passes in the corridor and reprimands him; Liu Xia doesn't stop, turning his head to snap back. Clinical white toplight, pale-blue indicators, cold metal grey; the only warm color is that blood-red stain, desaturated, 35mm grain, austere. Don't exaggerate the stain into a pool, no fighting, no glow FX.</pre>
+        </div>
+        <div class="link"><span class="lk">跨段衔接卡 → 12-3：</span> 末帧＝刘夏擦拭顶嘴近景／道具＝芯片（已收）、抹布／光＝临床白＋淡蓝／情绪＝烦躁／机位＝隔间内／音＝机器人"违规操作"复读／镜轴＝转向底层屏幕／旺财＝门外／下一动作＝关连线、瞥见屏上名单。</div>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-hd"><span class="gn">分镜组 12-3</span><span class="gt">· 撞见母亲的名字</span><span class="dur">15s</span><span class="tpl">D-3 情绪特写（钩子）</span></div>
+      <div class="grp-body">
+        <div class="field"><div class="fk">机位·焦段·运镜</div><div class="fv">机位：刘夏走出中景→底层屏幕微推特写→刘夏面部超特写；<b>人物 50mm</b> ／屏幕名单<b>85mm f/2.8</b> ／面部<b>100mm f/1.8 极浅</b>；运镜：<b>极缓慢推镜（Slow Dolly In，几乎不可察觉）</b>逼近脸。</div></div>
+        <div class="field"><div class="fk">分镜描述（0–15s）</div><div class="tl">
+          <span class="t">[0–5s]</span> <span class="act">刘夏气得关掉连线、走出隔间（「违规操作」机械复读渐弱）。</span><br>
+          <span class="t">[5–10s]</span> <span class="act">主管系统底层屏幕一闪而过小字：「历年该隔间灭刑者：方星、李贵……苏吟」——推特写落在"苏吟"二字。</span><br>
+          <span class="t">[10–15s]</span> <span class="act">刘夏余光瞥见，脚步顿住，愣了半天，眼里闪着泪光（极浅景深超特写，环境虚成一片白）。</span>
+        </div></div>
+        <div class="field"><div class="fk">台词·环境（四要素）</div><div class="four">台词 主管机器人（画外复读）「违规操作，违规操作……」｜触发：刘夏关连线后余音｜音量/语气：机械复读、逐渐降低如故障｜同步肢体：刘夏背对屏幕走出、被"苏吟"钉住脚步｜停顿节奏：复读间隔渐长、最后一句拖尾——与刘夏顿住同步。</div></div>
+        <div class="field"><div class="fk">情感具象化（钩子·情绪爆点，克制）</div><div class="fv">走出→余光扫屏→脚步顿住→呼吸一滞→瞳孔微缩→眼眶蓄泪但不落。（全程不写"震惊/悲痛"，最后一滴泪不落下——留白到下一场）</div></div>
+        <div class="field"><div class="fk">关键帧强制声明</div><div class="fv">帧①≈8s：屏幕名单推特写、"苏吟"二字清晰可读（本场钩子）。末帧≈15s：刘夏眼含泪光的极浅景深超特写，环境虚成一片临床白。</div></div>
+        <div class="field"><div class="fk">限制</div><div class="fv"><b>必须有：</b>"苏吟"二字可读、刘夏含泪不落的克制爆发、极浅景深剥离环境。<b>不允许：</b>嚎啕大哭；煽情配乐式打光；发光特效。<b>状态延续：</b>面罩下巴、末帧泪光将落未落（衔接场13的家）。</div></div>
+        <div class="final">
+          <div class="fhd"><span>成片提示词 · 中文（主）</span><button onclick="cp(this)">复制</button></div>
+          <pre>休眠设施走廊，日，临床白冷光。刘夏走出中景接底层屏幕85mm名单特写与100mm f/1.8面部极浅景深超特写，极缓慢推镜（Slow Dolly In，几乎不可察觉）。刘夏气得关掉连线、走出隔间，画外主管机器人"违规操作，违规操作"机械复读渐弱。主管系统底层屏幕一闪而过一行小字"历年该隔间灭刑者：方星、李贵……苏吟"，推特写落在"苏吟"二字、清晰可读。刘夏背对屏幕走出，余光瞥见，脚步骤然顿住，愣了半天，呼吸一滞，眼眶蓄起泪光但没有落下（极浅景深，环境虚化成一片临床白）。临床白冷光，低饱和，35mm film颗粒，克制的情绪爆点。不要嚎啕大哭，不要煽情打光，不要发光特效。</pre>
+          <pre class="en">Hibernation facility corridor, day, clinical white light. Liu Xia walking out in medium cutting to an 85mm screen close-up of the name list and a 100mm f/1.8 ultra-shallow facial close-up, barely-perceptible Slow Dolly In. Furious, Liu Xia cuts the link and walks out, the supervisor bot's "violation, violation" looping and fading off-screen. On the system's lower screen a line of small text flashes: "Past executed in this cell: Fang Xing, Li Gui... Su Yin," the push-in landing on the two characters "Su Yin," clearly legible. Walking out with his back to the screen, Liu Xia catches it in the corner of his eye, his steps jerk to a halt, he freezes, breath catching, eyes welling but not spilling (ultra-shallow focus, environment blurred to clinical white). Clinical white light, desaturated, 35mm grain, a restrained emotional peak. No wailing, no melodramatic lighting, no glow FX.</pre>
+        </div>
+        <div class="link"><span class="lk">跨段衔接卡 → 场13（回家）：</span> 末帧＝刘夏泪光将落未落／服装＝工装＋面罩下巴／光＝临床白／道具＝无／情绪＝钩子未落地的隐痛／机位＝超特写／音＝"违规操作"拖尾消失／下一场＝推门回家、摘罩、母亲照片绿光／镜轴＝转向门口／旺财＝随行。</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<footer>
+  依据《四季之地》完整剧本（编剧 林奇／甘元莉，接受修订版）场 7–12 原文动作与台词。提示词按 aigc-film-prompts v4.7 模板撰写：STYLE LOCK 夏派参数、机位/焦段自动绑定、运镜三铁律、15s 分镜描述、关键帧强制声明、台词四要素、跨段衔接卡。<br>
+  当前为<b>通用 · T2V 双语基准</b>。指定模型（Kling／即梦Seedance／海螺Hailuo／通义万相／Runway Gen-4）或提供首帧图后，可切换语法与 I2V 精简版。色卡取自各场光线与美术基调，可下载 PNG／SVG 供美术/调色统一参考。
+</footer>
+</div>
+
+<script>
+function dlSVG(id,name){
+  const svg=document.getElementById(id);
+  const xml=new XMLSerializer().serializeToString(svg);
+  const blob=new Blob(['<?xml version="1.0" encoding="UTF-8"?>\n'+xml],{type:'image/svg+xml'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=name+'.svg'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function dlPNG(id,name){
+  const svg=document.getElementById(id);
+  const vb=svg.viewBox.baseVal; const scale=3;
+  const xml=new XMLSerializer().serializeToString(svg);
+  const svg64='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(xml)));
+  const img=new Image();
+  img.onload=function(){
+    const c=document.createElement('canvas');
+    c.width=vb.width*scale; c.height=vb.height*scale;
+    const ctx=c.getContext('2d');
+    ctx.setTransform(scale,0,0,scale,0,0);
+    ctx.drawImage(img,0,0);
+    c.toBlob(function(blob){
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob); a.download=name+'.png'; a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+    },'image/png');
+  };
+  img.onerror=function(){ dlSVG(id,name); };
+  img.src=svg64;
+}
+function cp(btn){
+  const pre=btn.closest('.final').querySelector('pre');
+  const txt=pre.innerText;
+  navigator.clipboard.writeText(txt).then(()=>{
+    const old=btn.textContent; btn.textContent='已复制'; setTimeout(()=>btn.textContent=old,1200);
+  }).catch(()=>{
+    const r=document.createRange(); r.selectNode(pre);
+    getSelection().removeAllRanges(); getSelection().addRange(r);
+    try{document.execCommand('copy');btn.textContent='已复制';setTimeout(()=>btn.textContent='复制',1200);}catch(e){}
+    getSelection().removeAllRanges();
+  });
+}
+
+/* ============ 反馈 + AI 分析（接后端） ============ */
+const CTX='《四季之地》2080夏派 · STYLE LOCK：自然主义纪实/低饱和暖灰/近未来赛博山城/被规训的麻木；夏派=高反差·短硬阴影·3500-5000K·强直射光。运镜三铁律：单镜单向+速度词+Dolly≠Zoom。请遵循 aigc-film-prompts v4.7 字段规范（STYLE LOCK/机位焦段/运镜/15s分镜/关键帧/台词四要素/限制）。';
+function apiBase(){return (localStorage.getItem('fb_api_base')||'').replace(/\/+$/,'');}
+function api(p){return apiBase()+p;}
+function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function pidOf(grp){const t=(grp.querySelector('.gn')||{}).textContent||'';const m=t.match(/(\d+-\d+)/);return m?m[1]:t.trim();}
+function promptOf(grp){const pre=grp.querySelector('.final pre');return pre?pre.innerText.trim():'';}
+
+async function loadAllFB(){
+  let all={};
+  try{const r=await fetch(api('/api/feedback'));if(r.ok)all=await r.json();}catch(e){}
+  document.querySelectorAll('.grp').forEach(grp=>{
+    const pid=pidOf(grp);
+    let fb=grp.querySelector('.fb');
+    if(!fb){fb=document.createElement('div');fb.className='fb';fb.dataset.pid=pid;grp.querySelector('.grp-body').appendChild(fb);}
+    renderFB(fb,pid,all[pid]||[]);
+  });
+}
+function renderFB(fb,pid,items){
+  fb.innerHTML=
+    '<div class="fb-hd">使用反馈 <span class="cnt">'+(items.length?('· 共 '+items.length+' 条'):'· 暂无，来做第一个')+'</span></div>'+
+    '<div class="fb-list"></div>'+
+    '<textarea class="fb-in" placeholder="写下用这条提示词生成后的问题，例如：旺财被生成成崭新无划痕 / 光太冷不像夏天 / [10-15s] 三层仓开启的动作被吞掉了…"></textarea>'+
+    '<div class="fb-btns"><button class="fb-add">提交反馈</button></div>'+
+    '<div class="fb-note">提交后所有访客可见；点每条反馈下的按钮让 AI 分析未达标原因并给出修改方案。</div>';
+  const list=fb.querySelector('.fb-list');
+  items.forEach((it,i)=>list.appendChild(fbItem(pid,it,i+1)));
+  fb.querySelector('.fb-add').onclick=async()=>{
+    const ta=fb.querySelector('.fb-in');const text=ta.value.trim();if(!text)return;
+    const btn=fb.querySelector('.fb-add');btn.disabled=true;btn.textContent='提交中…';
+    try{
+      const r=await fetch(api('/api/feedback'),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pid,text})});
+      if(!r.ok)throw new Error(((await r.json())||{}).error||'提交失败');
+      ta.value='';await reloadOne(pid);
+    }catch(e){alert('提交失败：'+e.message+'\n\n若未连接后端，请展开顶部「⚙ AI 接入设置」填写后端地址。');}
+    finally{btn.disabled=false;btn.textContent='提交反馈';}
+  };
+}
+function fbItem(pid,it,idx){
+  const d=document.createElement('div');d.className='fb-item';
+  const time=new Date(it.ts).toLocaleString('zh-CN',{hour12:false});
+  d.innerHTML='<div class="fb-item-hd"><span>反馈'+idx+' · '+time+'</span><button class="del">删除</button></div>'+
+    '<div class="fb-item-txt"></div>'+
+    '<button class="fb-analyze">'+(it.analysis?'重新分析':'AI 分析并给出修改方案')+'</button>'+
+    '<div class="fb-analysis '+(it.analysis?'on':'')+'"></div>';
+  d.querySelector('.fb-item-txt').textContent=it.text;
+  const ana=d.querySelector('.fb-analysis');
+  if(it.analysis)renderAnalysis(ana,it.analysis);
+  d.querySelector('.fb-analyze').onclick=(e)=>runAnalyze(e.target,pid,it,ana);
+  d.querySelector('.del').onclick=()=>delFB(pid,it.id);
+  return d;
+}
+function renderAnalysis(el,text){
+  el.classList.add('on');
+  el.innerHTML='<button class="copy2">复制修改后提示词</button>'+esc(text);
+  el.querySelector('.copy2').onclick=()=>{
+    let t=text;const parts=text.split(/③[^\n]*\n/);if(parts.length>1)t=parts[parts.length-1].trim();
+    if(navigator.clipboard)navigator.clipboard.writeText(t);
+    el.querySelector('.copy2').textContent='已复制';setTimeout(()=>{const b=el.querySelector('.copy2');if(b)b.textContent='复制修改后提示词';},1200);
+  };
+}
+async function runAnalyze(btn,pid,it,ana){
+  const grp=btn.closest('.grp');const promptText=promptOf(grp);
+  btn.disabled=true;const old=btn.textContent;btn.textContent='AI 分析中…';
+  ana.classList.add('on');ana.textContent='正在请求 AI，请稍候…';
+  try{
+    const r=await fetch(api('/api/analyze'),{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({pid,fid:it.id,prompt:promptText,feedback:it.text,context:CTX})});
+    const data=await r.json();
+    if(!r.ok)throw new Error(data.error||'分析失败');
+    it.analysis=data.analysis;renderAnalysis(ana,data.analysis);btn.textContent='重新分析';
+  }catch(e){ana.textContent='分析失败：'+e.message+'\n（请确认后端已配置 API Key）';btn.textContent=old;}
+  finally{btn.disabled=false;}
+}
+async function delFB(pid,id){
+  const pw=window.prompt('输入管理员密码以删除该反馈：');if(pw===null)return;
+  try{
+    const r=await fetch(api('/api/feedback/'+encodeURIComponent(pid)+'/'+encodeURIComponent(id)),{method:'DELETE',headers:{'x-admin-password':pw}});
+    if(!r.ok)throw new Error(((await r.json())||{}).error||'删除失败');
+    await reloadOne(pid);
+  }catch(e){alert(e.message);}
+}
+async function reloadOne(pid){
+  let items=[];
+  try{const r=await fetch(api('/api/feedback?pid='+encodeURIComponent(pid)));if(r.ok)items=await r.json();}catch(e){}
+  const fb=document.querySelector('.fb[data-pid="'+pid+'"]');if(fb)renderFB(fb,pid,items);
+}
+
+/* ============ 设置面板 ============ */
+async function refreshStat(){
+  const el=document.getElementById('ai-stat');
+  try{
+    const r=await fetch(api('/api/config/status'));const d=await r.json();
+    if(d.keyConfigured){el.className='stat ok';el.textContent='✓ 服务器已配置 API Key ｜ 模型：'+d.model+'（来源：'+d.source+'）｜ AI 分析可用';}
+    else{el.className='stat';el.textContent='✗ 服务器已连接，但尚未配置 API Key —— AI 分析不可用。请在下方填入 key＋管理员密码并保存。';}
+  }catch(e){el.className='stat';el.textContent='● 未连接后端：反馈与 AI 分析暂不可用。若后端部署在别处，请在下方填写后端地址；本地/离线打开则需先启动后端。';}
+}
+function bindSettings(){
+  const beUrl=document.getElementById('be-url');beUrl.value=localStorage.getItem('fb_api_base')||'';
+  document.getElementById('be-save').onclick=()=>{localStorage.setItem('fb_api_base',beUrl.value.trim());location.reload();};
+  document.getElementById('ai-save').onclick=async()=>{
+    const key=document.getElementById('ai-key').value.trim();
+    const pw=document.getElementById('ai-pw').value;
+    const model=document.getElementById('ai-model').value.trim();
+    const msg=document.getElementById('ai-msg');msg.textContent='保存中…';
+    try{
+      const r=await fetch(api('/api/config/key'),{method:'POST',headers:{'content-type':'application/json','x-admin-password':pw},body:JSON.stringify({key,model})});
+      const d=await r.json();if(!r.ok)throw new Error(d.error||'保存失败');
+      msg.textContent='✓ 已保存到服务器';document.getElementById('ai-key').value='';refreshStat();
+    }catch(e){msg.textContent='✗ '+e.message;}
+  };
+}
+document.addEventListener('DOMContentLoaded',()=>{bindSettings();refreshStat();loadAllFB();});
+</script>

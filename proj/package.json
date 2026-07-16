@@ -1,0 +1,15 @@
+{
+  "name": "sijizhidi-feedback",
+  "version": "1.0.0",
+  "description": "《四季之地》AIGC 提示词反馈 + AI 分析 · 最小后端",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
