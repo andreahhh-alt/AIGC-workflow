@@ -307,6 +307,14 @@ async function seedSijizhidi() {
 // ---------- AI 服务 ----------
 function config() { return readJSON(CONFIG_FILE, {}); }
 function provider() { return process.env.AI_PROVIDER || config().provider || 'deepseek'; }
+function normalizeApiKey(value) {
+  let normalized = String(value || '').trim();
+  const quoted =
+    (normalized.startsWith('"') && normalized.endsWith('"')) ||
+    (normalized.startsWith("'") && normalized.endsWith("'"));
+  if (quoted) normalized = normalized.slice(1, -1).trim();
+  return normalized.replace(/^Bearer\s+/i, '').trim();
+}
 function apiKey() {
   const envKeys = {
     anthropic: process.env.ANTHROPIC_API_KEY,
@@ -314,7 +322,7 @@ function apiKey() {
     kimi: process.env.MOONSHOT_API_KEY || process.env.KIMI_API_KEY,
     openai_compatible: process.env.AI_API_KEY
   };
-  return envKeys[provider()] || config().apiKey || '';
+  return normalizeApiKey(envKeys[provider()] || config().apiKey);
 }
 function model() {
   const defaults = {
@@ -393,7 +401,11 @@ async function callAI(system, user) {
   const raw = await response.text();
   let data = {};
   try { data = JSON.parse(raw); } catch {}
-  if (!response.ok) throw new Error(data?.error?.message || `${provider()} HTTP ${response.status}`);
+  if (!response.ok) {
+    const errorType = data?.error?.type ? ` ${data.error.type}` : '';
+    const errorMessage = data?.error?.message || '请求失败';
+    throw new Error(`${provider()} HTTP ${response.status}${errorType}: ${errorMessage}`);
+  }
   return data?.choices?.[0]?.message?.content?.trim() || '';
 }
 
