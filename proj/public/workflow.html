@@ -160,6 +160,9 @@
           <div><i></i> 可回溯资料来源</div>
         </div>
         <div class="knowledge-grid" id="knowledge-grid"></div>
+        <article class="panel graph-explorer" id="knowledge-detail">
+          <div class="empty-state">生成知识分析后，可在这里查看节点，并从节点直接跳转到对应场次和分镜组。</div>
+        </article>
       </section>
 
       <section class="view" id="view-assets">
@@ -181,6 +184,13 @@
             <button class="secondary-button" id="ai-split-scenes">AI拆分场次</button>
             <button class="primary-button" id="audit-storyboard">AI检查连续性</button>
           </div>
+        </div>
+        <div class="storyline-bar">
+          <div>
+            <strong>剧情线路</strong>
+            <span>同一场次可同时属于主线与次线；筛选不会改变原始剧本顺序。</span>
+          </div>
+          <div class="filter-row" id="storyline-filters"></div>
         </div>
         <div class="storyboard-layout">
           <aside class="scene-list" id="scene-list"></aside>

@@ -245,7 +245,20 @@ async function seedSijizhidi() {
     await Store.put({
       id: sceneId, projectId, kind: 'scene', subtype: 'script_scene',
       name: `场${sceneNo} · ${heading}`, status: 'approved',
-      data: { sceneNo, heading, summary, sourceRefs: ['legacy-site'] },
+      data: {
+        sceneNo,
+        sceneRef: `${sceneNo}#1`,
+        displaySceneNo: sceneNo,
+        canonicalKey: canonicalSceneKey('film', sceneNo, 1),
+        heading,
+        summary,
+        primaryLine: 'male',
+        secondaryLines: sceneNo === '12' ? ['mystery'] : [],
+        povCharacter: '刘夏',
+        characters: sceneNo === '7' ? ['刘夏'] : ['刘夏', '旺财'],
+        events: [],
+        sourceRefs: ['legacy-site']
+      },
       order: order++, createdAt: now(), updatedAt: now()
     });
     for (const [code, title, type] of groupMap[sceneNo]) {
@@ -253,7 +266,11 @@ async function seedSijizhidi() {
         id: `group_${code}`, projectId, kind: 'shot_group', subtype: type,
         name: `${code} · ${title}`, status: 'approved',
         data: {
-          code, title, sceneId, sceneNo, duration: 15, promptStatus: 'legacy',
+          code, title, sceneId, sceneNo, sceneRef: `${sceneNo}#1`,
+          displaySceneNo: sceneNo, primaryLine: 'male',
+          lineRefs: sceneNo === '12' ? ['male', 'mystery'] : ['male'],
+          lineRefsSource: 'scene_inherited',
+          duration: 15, promptStatus: 'legacy',
           targetModel: '通用', mode: 'T2V', colorCard: []
         },
         order: order++, createdAt: now(), updatedAt: now()
@@ -334,6 +351,127 @@ function parseAIJson(text) {
   }
 }
 
+const STORY_LINES = new Set(['male', 'female', 'supporting', 'ensemble', 'world', 'romance', 'mystery', 'other']);
+const normalizeSceneNo = value => String(value ?? '')
+  .trim()
+  .replace(/^第\s*/u, '')
+  .replace(/\s*场$/u, '')
+  .replace(/\s+/g, '');
+const canonicalSceneKey = (episodeNo, sceneNo, occurrence = 1) =>
+  `${normalizeSceneNo(episodeNo || 'film')}:${normalizeSceneNo(sceneNo)}#${Number(occurrence) || 1}`;
+const stableId = (prefix, value) =>
+  `${prefix}_${crypto.createHash('sha1').update(String(value)).digest('hex').slice(0, 20)}`;
+const normalizeLine = value => STORY_LINES.has(String(value || '').toLowerCase())
+  ? String(value).toLowerCase()
+  : 'other';
+const normalizeLineList = values => [...new Set((Array.isArray(values) ? values : [])
+  .map(normalizeLine)
+  .filter(Boolean))];
+
+function normalizeSceneData(projectId, scene, project, options = {}) {
+  const sceneNo = normalizeSceneNo(scene.sceneNo);
+  const episodeNo = normalizeSceneNo(scene.episodeNo || project?.data?.episodeNo || 'film');
+  const occurrence = Number(options.occurrence || scene.sceneOccurrence || 1);
+  const duplicateSceneNo = !!options.duplicateSceneNo;
+  const sceneRef = `${sceneNo}#${occurrence}`;
+  const displaySceneNo = duplicateSceneNo ? `${sceneNo}${String.fromCharCode(64 + Math.min(occurrence, 26))}` : sceneNo;
+  const canonicalKey = canonicalSceneKey(episodeNo, sceneNo, occurrence);
+  const sceneId = stableId('scene', `${projectId}:${canonicalKey}`);
+  const primaryLine = normalizeLine(scene.primaryLine);
+  const secondaryLines = normalizeLineList(scene.secondaryLines).filter(line => line !== primaryLine);
+  const events = (Array.isArray(scene.events) ? scene.events : []).map((event, index) => ({
+    ...event,
+    id: stableId('event', `${sceneId}:${event.label || event.name || index}`),
+    label: String(event.label || event.name || `事件${index + 1}`)
+  }));
+  return {
+    ...scene,
+    sceneNo,
+    sceneRef,
+    displaySceneNo,
+    sceneOccurrence: occurrence,
+    sceneIndex: Number(options.sceneIndex || scene.sceneIndex || 0),
+    numberingConflict: duplicateSceneNo,
+    episodeNo,
+    canonicalKey,
+    sceneId,
+    scriptVersion: scene.scriptVersion || project?.data?.scriptVersion || '',
+    primaryLine,
+    secondaryLines,
+    povCharacter: String(scene.povCharacter || ''),
+    characters: [...new Set((Array.isArray(scene.characters) ? scene.characters : []).map(String).filter(Boolean))],
+    events
+  };
+}
+
+function sceneReferenceNumbers(node) {
+  const direct = Array.isArray(node?.sceneRefs) ? node.sceneRefs : [];
+  const legacy = Array.isArray(node?.sceneNos) ? node.sceneNos : [];
+  const sourceRefs = Array.isArray(node?.sourceRefs) ? node.sourceRefs : [];
+  const candidates = [...direct, ...legacy, ...sourceRefs];
+  const numbers = [];
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === 'object' && candidate.sceneNo) {
+      numbers.push({
+        sceneNo: normalizeSceneNo(candidate.sceneNo),
+        sceneRef: String(candidate.sceneRef || ''),
+        role: candidate.role || ''
+      });
+      continue;
+    }
+    const value = String(candidate || '');
+    const explicit = value.match(/^(\d+(?:[-.]\d+)?)#(\d+)$/u);
+    if (explicit) {
+      numbers.push({ sceneNo: normalizeSceneNo(explicit[1]), sceneRef: `${normalizeSceneNo(explicit[1])}#${explicit[2]}`, role: '' });
+      continue;
+    }
+    const matches = [...value.matchAll(/(?:第\s*)?(\d+(?:[-.]\d+)?)\s*场/gu)];
+    if (matches.length) matches.forEach(match => numbers.push({ sceneNo: normalizeSceneNo(match[1]), sceneRef: '', role: '' }));
+    else if (/^\d+(?:[-.]\d+)?$/u.test(value.trim())) numbers.push({ sceneNo: normalizeSceneNo(value), sceneRef: '', role: '' });
+  }
+  return numbers;
+}
+
+function linkAnalysisData(data, scenes) {
+  const sceneRefMap = new Map(scenes.map(scene => [scene.data?.sceneRef || `${normalizeSceneNo(scene.data?.sceneNo)}#1`, scene]));
+  const scenesByNumber = new Map();
+  for (const scene of scenes) {
+    const sceneNo = normalizeSceneNo(scene.data?.sceneNo);
+    scenesByNumber.set(sceneNo, [...(scenesByNumber.get(sceneNo) || []), scene]);
+  }
+  const nodes = (Array.isArray(data?.nodes) ? data.nodes : []).map(node => {
+    const refs = sceneReferenceNumbers(node)
+      .map(ref => {
+        const candidates = scenesByNumber.get(ref.sceneNo) || [];
+        const scene = ref.sceneRef ? sceneRefMap.get(ref.sceneRef) : (candidates.length === 1 ? candidates[0] : null);
+        return {
+          sceneNo: ref.sceneNo,
+          sceneRef: scene?.data?.sceneRef || ref.sceneRef || '',
+          sceneId: scene?.id || '',
+          heading: scene?.data?.heading || '',
+          role: ref.role || '',
+          ambiguous: !scene && candidates.length > 1,
+          candidateSceneIds: !scene && candidates.length > 1 ? candidates.map(item => item.id) : []
+        };
+      })
+      .filter((ref, index, all) => ref.sceneNo && all.findIndex(item => `${item.sceneRef || item.sceneNo}` === `${ref.sceneRef || ref.sceneNo}`) === index);
+    return { ...node, sceneRefs: refs };
+  });
+  return { ...data, nodes, linkedSceneCount: new Set(nodes.flatMap(node => node.sceneRefs?.map(ref => ref.sceneId).filter(Boolean) || [])).size };
+}
+
+async function relinkAnalyses(projectId) {
+  const [scenes, analyses] = await Promise.all([
+    Store.list(projectId, 'scene'),
+    Store.list(projectId, 'analysis')
+  ]);
+  for (const analysis of analyses) {
+    analysis.data = linkAnalysisData(analysis.data || {}, scenes);
+    analysis.updatedAt = now();
+    await Store.put(analysis);
+  }
+}
+
 const FILM_SYSTEM = `你是AIGC影视项目分析与分镜系统。所有结论必须依据用户提供的资料，不得把推断写成事实。
 返回严格JSON，不要Markdown围栏，不要解释。
 遵循 aigc-film-prompts v4.7：
@@ -371,19 +509,36 @@ async function finishJob(job, status, patch) {
 }
 
 async function runKnowledgeJob(projectId, targets, context) {
+  const scenes = await Store.list(projectId, 'scene');
+  const sceneRegistry = scenes.map(scene => ({
+    sceneId: scene.id,
+    sceneNo: scene.data?.sceneNo,
+    heading: scene.data?.heading,
+    primaryLine: scene.data?.primaryLine,
+    secondaryLines: scene.data?.secondaryLines
+  }));
   const prompt = `请按需生成以下影视项目知识分析：${targets.join('、')}。
 输出格式：
-{"results":[{"type":"分析类型","title":"标题","summary":"摘要","nodes":[{"id":"稳定ID","label":"名称","description":"说明","sourceRefs":["文件/场次"]}],"edges":[{"from":"ID","to":"ID","label":"关系"}],"insights":["洞察"],"confidence":"high|medium|low"}]}
+{"results":[{"type":"分析类型","title":"标题","summary":"摘要","nodes":[{"id":"稳定ID","label":"名称","description":"说明","sceneRefs":[{"sceneNo":"12","sceneRef":"12#1","role":"发生/转折/回收"}],"sourceRefs":["文件/场次"]}],"edges":[{"from":"ID","to":"ID","label":"关系"}],"insights":["洞察"],"confidence":"high|medium|low"}]}
+要求：
+1. 所有能定位到剧本场次的节点必须填写sceneRefs；
+2. 使用场次索引给出的sceneRef，不得编造sceneId，服务器会统一链接；
+3. 时间线节点按剧本场次顺序输出；
+4. 人物线节点标明目标、行动、阻力、选择与代价；
+5. 一个节点可以关联多个场次。
+当前已确认场次索引：
+${JSON.stringify(sceneRegistry)}
 资料如下：
 ${context}`;
   const data = parseAIJson(await callAI(FILM_SYSTEM, prompt));
   const results = Array.isArray(data.results) ? data.results : [];
   for (const item of results) {
+    const linked = linkAnalysisData(item, scenes);
     await Store.put({
       id: `analysis_${projectId}_${item.type}`,
       projectId, kind: 'analysis', subtype: item.type,
       name: item.title || item.type, status: 'ai_draft',
-      data: item, order: targets.indexOf(item.type),
+      data: linked, order: targets.indexOf(item.type),
       createdAt: now(), updatedAt: now()
     });
   }
@@ -410,34 +565,213 @@ ${context}`;
   return { count: assets.length };
 }
 
+const SCRIPT_SCENE_PATTERNS = [
+  /^场\s*(\d+(?:[-.]\d+)?)\s*[：:·.\s-]*(.*)$/u,
+  /^(?:第\s*)?(\d+(?:[-.]\d+)?)\s*场(?:次)?\s*[：:·.\s-]*(.*)$/u
+];
+
+function parseScriptSceneBlocks(text, sourceName = '剧本') {
+  const lines = String(text || '').split(/\r?\n/u);
+  const scenes = [];
+  let current = null;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    let match = null;
+    for (const pattern of SCRIPT_SCENE_PATTERNS) {
+      match = trimmed.match(pattern);
+      if (match) break;
+    }
+    if (match) {
+      if (current) scenes.push(current);
+      current = {
+        sceneIndex: scenes.length + 1,
+        sceneNo: normalizeSceneNo(match[1]),
+        heading: String(match[2] || '').trim(),
+        sourceText: '',
+        sourceRefs: [`${sourceName} / 场${normalizeSceneNo(match[1])}`]
+      };
+      continue;
+    }
+    if (current && trimmed) current.sourceText += `${current.sourceText ? '\n' : ''}${trimmed}`;
+  }
+  if (current) scenes.push(current);
+  return scenes;
+}
+
+function filterSceneBlocks(blocks, scope) {
+  const range = String(scope || '').match(/(\d+)\s*[-—至到]\s*(\d+)/u);
+  if (!range) return blocks;
+  const start = Number(range[1]);
+  const end = Number(range[2]);
+  return blocks.filter(block => {
+    const number = Number.parseFloat(block.sceneNo);
+    return Number.isFinite(number) && number >= start && number <= end;
+  });
+}
+
+async function mapWithConcurrency(items, concurrency, worker) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
 async function runSceneJob(projectId, scope, context) {
-  const prompt = `将剧本拆为场次，并给每场规划15秒分镜组。${scope ? `范围：${scope}` : ''}
-先忠实识别场次，不要改写剧情。每个15秒单元内部按2-4秒动作节拍拆分。
-输出格式：
-{"scenes":[{"sceneNo":"1","heading":"内/外景·地点·时间","summary":"本场事件与功能","sourceText":"对应原文摘要","sourceRefs":["来源"],"shotGroups":[{"code":"1-1","title":"短标题","type":"D-1|D-2|D-3|D-SEQ","duration":15,"beats":[{"time":"0-4s","action":"单一核心动作"}],"endState":"末帧状态"}]}]}
-资料如下：
-${context}`;
-  const data = parseAIJson(await callAI(FILM_SYSTEM, prompt));
-  const scenes = Array.isArray(data.scenes) ? data.scenes : [];
-  let order = 1;
-  for (const scene of scenes) {
-    const sceneId = `scene_${projectId}_${scene.sceneNo}`;
-    await Store.put({
-      id: sceneId, projectId, kind: 'scene', subtype: 'script_scene',
-      name: `场${scene.sceneNo} · ${scene.heading}`, status: 'ai_draft',
-      data: scene, textContent: scene.sourceText || null,
-      order: order++, createdAt: now(), updatedAt: now()
+  const project = await Store.get(projectId);
+  const files = await Store.list(projectId, 'file');
+  const scriptFiles = files
+    .filter(file => file.subtype === 'script' && file.textContent)
+    .sort((a, b) => {
+      const rank = value => value.data?.authoritative ? 2 : (['approved', 'locked'].includes(value.status) ? 1 : 0);
+      return rank(b) - rank(a) || (b.createdAt || 0) - (a.createdAt || 0);
     });
-    for (const group of scene.shotGroups || []) {
+  const sourceFile = scriptFiles[0];
+  const parsedBlocks = filterSceneBlocks(
+    sourceFile ? parseScriptSceneBlocks(sourceFile.textContent, sourceFile.name) : [],
+    scope
+  );
+  const batches = [];
+  for (let index = 0; index < parsedBlocks.length; index += 8) batches.push(parsedBlocks.slice(index, index + 8));
+
+  const buildPrompt = sourceScenes => `为以下已经确定边界的剧本场次规划15秒分镜组和剧情线路标签。${scope ? `范围：${scope}` : ''}
+场次号、sceneIndex、场次顺序和原文不得修改、合并或遗漏。每个15秒单元内部按2-4秒动作节拍拆分。
+每个场次同时完成剧情线路标注。primaryLine只能是：
+male（男主主导）、female（女主主导）、supporting（配角主导）、ensemble（群像/男女共同）、world（世界观）、romance（感情线）、mystery（悬疑线）、other。
+secondaryLines允许多个。不要因为人物出场就判定为其单线，必须依据本场叙事目标和视角。
+输出格式：
+{"scenes":[{"sceneIndex":1,"sceneNo":"1","episodeNo":"film","heading":"内/外景·地点·时间","summary":"本场事件与功能","primaryLine":"male|female|supporting|ensemble|world|romance|mystery|other","secondaryLines":["romance"],"povCharacter":"视角人物","characters":["出场人物"],"events":[{"label":"剧情事件","type":"goal|action|obstacle|choice|reveal|turn|payoff"}],"sourceText":"对应原文摘要","sourceRefs":["文件名/场次"],"shotGroups":[{"code":"1-1","title":"短标题","type":"D-1|D-2|D-3|D-SEQ","duration":15,"lineRefs":["male"],"eventRefs":["剧情事件名称"],"beats":[{"time":"0-4s","action":"单一核心动作"}],"endState":"末帧状态"}]}]}
+输入场次：
+${JSON.stringify(sourceScenes)}`;
+
+  let scenes;
+  if (batches.length) {
+    const batchResults = await mapWithConcurrency(batches, 3, async batch => {
+      const data = parseAIJson(await callAI(FILM_SYSTEM, buildPrompt(batch)));
+      const generated = Array.isArray(data.scenes) ? data.scenes : [];
+      return batch.map((sourceScene, index) => {
+        const result = generated.find(item => Number(item.sceneIndex) === Number(sourceScene.sceneIndex))
+          || generated[index]
+          || {};
+        return {
+          ...result,
+          sceneIndex: sourceScene.sceneIndex,
+          sceneNo: sourceScene.sceneNo,
+          heading: sourceScene.heading || result.heading || '',
+          sourceText: sourceScene.sourceText,
+          sourceRefs: sourceScene.sourceRefs,
+          shotGroups: Array.isArray(result.shotGroups) ? result.shotGroups : []
+        };
+      });
+    });
+    scenes = batchResults.flat();
+  } else {
+    const fallbackPrompt = `${buildPrompt([])}\n未能确定性识别场次标题，请直接从以下资料识别全部场次：\n${context}`;
+    const data = parseAIJson(await callAI(FILM_SYSTEM, fallbackPrompt));
+    scenes = Array.isArray(data.scenes) ? data.scenes : [];
+  }
+  const incompleteScenes = parsedBlocks.length
+    ? scenes.filter(scene => !Array.isArray(scene.shotGroups) || !scene.shotGroups.length)
+    : [];
+  if (incompleteScenes.length) {
+    throw new Error(`AI未完成以下场次的分镜拆分：${incompleteScenes.map(scene => scene.sceneNo).join('、')}。未写入不完整结果，请重试。`);
+  }
+  const sceneNumberCounts = scenes.reduce((counts, scene) => {
+    const sceneNo = normalizeSceneNo(scene.sceneNo);
+    counts.set(sceneNo, (counts.get(sceneNo) || 0) + 1);
+    return counts;
+  }, new Map());
+  const existingScenes = await Store.list(projectId, 'scene');
+  const existingGroups = await Store.list(projectId, 'shot_group');
+  const usedSceneIds = new Set();
+  const usedGroupIds = new Set();
+  const seenSceneNumbers = new Map();
+  let order = 1;
+  for (const [sceneIndex, scene] of scenes.entries()) {
+    const rawSceneNo = normalizeSceneNo(scene.sceneNo);
+    const occurrence = (seenSceneNumbers.get(rawSceneNo) || 0) + 1;
+    seenSceneNumbers.set(rawSceneNo, occurrence);
+    let normalized = normalizeSceneData(projectId, scene, project, {
+      occurrence,
+      duplicateSceneNo: (sceneNumberCounts.get(rawSceneNo) || 0) > 1,
+      sceneIndex: sceneIndex + 1
+    });
+    const matchedExistingScene = existingScenes.find(item =>
+      item.data?.canonicalKey === normalized.canonicalKey
+      || (
+        !normalized.numberingConflict
+        && normalizeSceneNo(item.data?.sceneNo) === normalized.sceneNo
+        && Number(item.data?.sceneOccurrence || 1) === occurrence
+      )
+    );
+    const sceneId = matchedExistingScene?.id || normalized.sceneId;
+    normalized.sceneId = sceneId;
+    usedSceneIds.add(sceneId);
+    const existingScene = await Store.get(sceneId);
+    if (existingScene?.status === 'locked') {
+      normalized = { ...normalized, ...existingScene.data, sceneId };
+      order += 1;
+    } else {
       await Store.put({
-        id: `group_${projectId}_${group.code}`, projectId, kind: 'shot_group',
-        subtype: group.type || 'D-1', name: `${group.code} · ${group.title}`,
+        id: sceneId, projectId, kind: 'scene', subtype: 'script_scene',
+        name: `场${normalized.displaySceneNo} · ${normalized.heading}`, status: 'ai_draft',
+        data: normalized, textContent: normalized.sourceText || null,
+        order: order++, createdAt: existingScene?.createdAt || now(), updatedAt: now()
+      });
+    }
+    for (const [groupIndex, group] of (normalized.shotGroups || []).entries()) {
+      const code = normalized.numberingConflict
+        ? `${normalized.displaySceneNo}-${groupIndex + 1}`
+        : (group.code || `${normalized.sceneNo}-${groupIndex + 1}`);
+      const matchedExistingGroup = existingGroups.find(item =>
+        item.data?.sceneId === sceneId && String(item.data?.code || '') === String(code)
+      );
+      const groupId = matchedExistingGroup?.id || stableId('group', `${sceneId}:${code}`);
+      usedGroupIds.add(groupId);
+      const existingGroup = await Store.get(groupId);
+      if (existingGroup?.status === 'locked') continue;
+      await Store.put({
+        id: groupId, projectId, kind: 'shot_group',
+        subtype: group.type || 'D-1', name: `${code} · ${group.title}`,
         status: 'ai_draft',
-        data: { ...group, sceneId, sceneNo: scene.sceneNo, promptStatus: 'not_generated' },
-        order: order++, createdAt: now(), updatedAt: now()
+        data: {
+          ...group,
+          code,
+          sceneId,
+          sceneNo: normalized.sceneNo,
+          sceneRef: normalized.sceneRef,
+          displaySceneNo: normalized.displaySceneNo,
+          canonicalSceneKey: normalized.canonicalKey,
+          primaryLine: normalized.primaryLine,
+          lineRefs: normalizeLineList(group.lineRefs?.length ? group.lineRefs : [normalized.primaryLine, ...normalized.secondaryLines]),
+          lineRefsSource: group.lineRefs?.length ? 'ai_group' : 'scene_inherited',
+          eventRefs: Array.isArray(group.eventRefs) ? group.eventRefs : [],
+          promptStatus: existingGroup?.data?.promptStatus || 'not_generated'
+        },
+        order: order++, createdAt: existingGroup?.createdAt || now(), updatedAt: now()
       });
     }
   }
+  if (!String(scope || '').trim()) {
+    for (const scene of existingScenes.filter(item => !usedSceneIds.has(item.id))) {
+      scene.data = { ...scene.data, staleReason: '最新全剧拆分中未找到该场次' };
+      if (scene.status !== 'locked') scene.status = 'stale';
+      scene.updatedAt = now();
+      await Store.put(scene);
+    }
+    for (const group of existingGroups.filter(item => !usedGroupIds.has(item.id))) {
+      group.data = { ...group.data, staleReason: '所属场次或分镜已在最新全剧拆分中变化' };
+      if (group.status !== 'locked') group.status = 'stale';
+      group.updatedAt = now();
+      await Store.put(group);
+    }
+  }
+  await relinkAnalyses(projectId);
   return { scenes: scenes.length, groups: scenes.reduce((sum, scene) => sum + (scene.shotGroups || []).length, 0) };
 }
 
@@ -644,7 +978,35 @@ app.patch('/api/records/:id', async (req, res) => {
     if (req.body?.name) record.name = String(req.body.name);
     if (req.body?.data && typeof req.body.data === 'object') record.data = { ...record.data, ...req.body.data };
     record.updatedAt = now();
-    res.json(await Store.put(record));
+    const saved = await Store.put(record);
+    if (record.kind === 'file' && record.subtype === 'script' && req.body?.data?.authoritative === true) {
+      const files = await Store.list(record.projectId, 'file');
+      for (const file of files.filter(item => item.id !== record.id && item.subtype === 'script' && item.data?.authoritative)) {
+        file.data = { ...file.data, authoritative: false };
+        file.updatedAt = now();
+        await Store.put(file);
+      }
+    }
+    if (record.kind === 'scene' && req.body?.data && ('primaryLine' in req.body.data || 'secondaryLines' in req.body.data)) {
+      const groups = await Store.list(record.projectId, 'shot_group');
+      const inheritedLines = normalizeLineList([record.data.primaryLine, ...(record.data.secondaryLines || [])]);
+      for (const group of groups.filter(item =>
+        item.data?.sceneId === record.id
+        && item.status !== 'locked'
+        && item.data?.lineRefsSource !== 'ai_group'
+      )) {
+        group.data = {
+          ...group.data,
+          primaryLine: normalizeLine(record.data.primaryLine),
+          lineRefs: inheritedLines
+        };
+        group.status = group.status === 'approved' ? 'review' : group.status;
+        group.updatedAt = now();
+        await Store.put(group);
+      }
+      await relinkAnalyses(record.projectId);
+    }
+    res.json(saved);
   } catch (error) { res.status(500).json({ error: String(error.message || error) }); }
 });
 
@@ -804,12 +1166,24 @@ app.use((error, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
-initStore()
-  .then(() => app.listen(PORT, () => {
-    console.log(`AIGC影视工作流已启动：http://localhost:${PORT}`);
-    console.log(`存储：${pool ? 'Postgres' : '本地JSON'}｜AI：${provider()} ${model()}`);
-  }))
-  .catch(error => {
-    console.error('初始化失败：', error);
-    process.exitCode = 1;
-  });
+if (require.main === module) {
+  initStore()
+    .then(() => app.listen(PORT, () => {
+      console.log(`AIGC影视工作流已启动：http://localhost:${PORT}`);
+      console.log(`存储：${pool ? 'Postgres' : '本地JSON'}｜AI：${provider()} ${model()}`);
+    }))
+    .catch(error => {
+      console.error('初始化失败：', error);
+      process.exitCode = 1;
+    });
+}
+
+module.exports = {
+  app,
+  initStore,
+  normalizeSceneData,
+  linkAnalysisData,
+  parseScriptSceneBlocks,
+  canonicalSceneKey,
+  stableId
+};

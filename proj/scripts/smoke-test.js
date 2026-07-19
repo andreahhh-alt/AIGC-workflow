@@ -36,6 +36,11 @@ const jsonRequest = async (url, options = {}) => {
   try {
     const bootstrap = await waitForServer();
     if (!bootstrap.project?.id) throw new Error('缺少种子项目');
+    const pageResponse = await fetch(base);
+    const pageHtml = await pageResponse.text();
+    if (!pageResponse.ok || !pageHtml.includes('storyline-filters') || !pageHtml.includes('knowledge-detail')) {
+      throw new Error('跨模块导航界面未加载');
+    }
 
     const projectId = bootstrap.project.id;
     const form = new FormData();
@@ -60,7 +65,40 @@ const jsonRequest = async (url, options = {}) => {
       body: JSON.stringify({ status: 'approved' })
     });
 
-    if (uploaded.files?.length !== 1 || approved.status !== 'approved') {
+    const manualScene = await jsonRequest(`${base}/api/projects/${projectId}/records`, {
+      method: 'POST',
+      body: JSON.stringify({
+        kind: 'scene',
+        subtype: 'script_scene',
+        name: '测试场次',
+        data: { sceneNo: 'T1', primaryLine: 'male', secondaryLines: [] }
+      })
+    });
+    const manualGroup = await jsonRequest(`${base}/api/projects/${projectId}/records`, {
+      method: 'POST',
+      body: JSON.stringify({
+        kind: 'shot_group',
+        subtype: 'D-1',
+        name: 'T1-1 测试分镜',
+        data: { code: 'T1-1', sceneId: manualScene.id, primaryLine: 'male', lineRefs: ['male'] }
+      })
+    });
+    await jsonRequest(`${base}/api/records/${manualScene.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        status: 'review',
+        data: { primaryLine: 'female', secondaryLines: ['romance'] }
+      })
+    });
+    const linkedBootstrap = await jsonRequest(`${base}/api/workflow/bootstrap?projectId=${projectId}`);
+    const inheritedGroup = linkedBootstrap.shotGroups.find(item => item.id === manualGroup.id);
+
+    if (
+      uploaded.files?.length !== 1
+      || approved.status !== 'approved'
+      || inheritedGroup?.data?.primaryLine !== 'female'
+      || !inheritedGroup?.data?.lineRefs?.includes('romance')
+    ) {
       throw new Error('核心工作流断言失败');
     }
 
@@ -76,7 +114,8 @@ const jsonRequest = async (url, options = {}) => {
         bootstrap.jobs
       ].flat().length,
       upload: uploaded.files[0].name,
-      manualRecordStatus: approved.status
+      manualRecordStatus: approved.status,
+      sceneLinePropagation: inheritedGroup.data.lineRefs
     }));
   } finally {
     child.kill();
