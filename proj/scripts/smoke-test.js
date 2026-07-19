@@ -36,6 +36,10 @@ const jsonRequest = async (url, options = {}) => {
   try {
     const bootstrap = await waitForServer();
     if (!bootstrap.project?.id) throw new Error('缺少种子项目');
+    const migratedLegacyScene = bootstrap.scenes.find(item => item.id === 'scene_7');
+    if (migratedLegacyScene && (!migratedLegacyScene.data?.sceneRef || migratedLegacyScene.data?.primaryLine !== 'male')) {
+      throw new Error('旧场次数据迁移失败');
+    }
     const pageResponse = await fetch(base);
     const pageHtml = await pageResponse.text();
     if (!pageResponse.ok || !pageHtml.includes('storyline-filters') || !pageHtml.includes('knowledge-detail')) {
