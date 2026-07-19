@@ -355,7 +355,7 @@ function isAdmin(req) {
   return !!expected && (req.headers['x-admin-password'] || '') === expected;
 }
 
-async function callAI(system, user) {
+async function callAI(system, user, options = {}) {
   const key = apiKey();
   if (!key) throw new Error('服务器尚未配置 AI API Key。');
   if (provider() === 'anthropic') {
@@ -388,8 +388,9 @@ async function callAI(system, user) {
     messages: [{ role: 'system', content: system }, { role: 'user', content: user }]
   };
   if (currentProvider === 'kimi' && currentModel === 'kimi-k3') {
-    requestBody.max_completion_tokens = 6000;
+    requestBody.max_completion_tokens = options.json ? 32768 : 12000;
     requestBody.reasoning_effort = 'max';
+    if (options.json) requestBody.response_format = { type: 'json_object' };
   } else {
     requestBody.max_tokens = 6000;
   }
@@ -675,7 +676,7 @@ async function runKnowledgeJob(projectId, targets, context) {
 ${JSON.stringify(sceneRegistry)}
 资料如下：
 ${context}`;
-  const data = parseAIJson(await callAI(FILM_SYSTEM, prompt));
+  const data = parseAIJson(await callAI(FILM_SYSTEM, prompt, { json: true }));
   const results = Array.isArray(data.results) ? data.results : [];
   for (const item of results) {
     const linked = linkAnalysisData(item, scenes);
@@ -697,7 +698,7 @@ async function runAssetJob(projectId, targets, context) {
 同名资产合并，不能凭空新增主要人物。
 资料如下：
 ${context}`;
-  const data = parseAIJson(await callAI(FILM_SYSTEM, prompt));
+  const data = parseAIJson(await callAI(FILM_SYSTEM, prompt, { json: true }));
   const assets = Array.isArray(data.assets) ? data.assets : [];
   for (const item of assets) {
     const stable = crypto.createHash('sha1').update(`${projectId}:${item.type}:${item.name}`).digest('hex').slice(0, 16);
@@ -797,7 +798,7 @@ ${JSON.stringify(sourceScenes)}`;
   let scenes;
   if (batches.length) {
     const batchResults = await mapWithConcurrency(batches, 3, async batch => {
-      const data = parseAIJson(await callAI(FILM_SYSTEM, buildPrompt(batch)));
+      const data = parseAIJson(await callAI(FILM_SYSTEM, buildPrompt(batch), { json: true }));
       const generated = Array.isArray(data.scenes) ? data.scenes : [];
       return batch.map((sourceScene, index) => {
         const result = generated.find(item => Number(item.sceneIndex) === Number(sourceScene.sceneIndex))
@@ -817,7 +818,7 @@ ${JSON.stringify(sourceScenes)}`;
     scenes = batchResults.flat();
   } else {
     const fallbackPrompt = `${buildPrompt([])}\n未能确定性识别场次标题，请直接从以下资料识别全部场次：\n${context}`;
-    const data = parseAIJson(await callAI(FILM_SYSTEM, fallbackPrompt));
+    const data = parseAIJson(await callAI(FILM_SYSTEM, fallbackPrompt, { json: true }));
     scenes = Array.isArray(data.scenes) ? data.scenes : [];
   }
   const incompleteScenes = parsedBlocks.length
@@ -938,7 +939,7 @@ async function runPromptJob(projectId, targets, scope) {
 输出格式：
 {"promptZh":"完整中文提示词","promptEn":"结构对应英文提示词","colorCard":[{"hex":"#RRGGBB","name":"颜色名","usage":"用途"}],"fields":{"camera":"机位","lens":"焦段光圈","movement":"单向带速度运镜","beats":[{"time":"0-4s","action":"动作"}],"keyframes":["关键帧"],"constraints":{"must":["必须有"],"avoid":["不允许"],"continuity":["状态延续"]},"transitionCard":"跨段衔接卡"}}
 只生成要求字段；没有要求的字段可留空字符串或空数组。`;
-  const data = parseAIJson(await callAI(FILM_SYSTEM, prompt));
+  const data = parseAIJson(await callAI(FILM_SYSTEM, prompt, { json: true }));
   group.status = 'ai_draft';
   group.updatedAt = now();
   group.data = {
@@ -968,7 +969,7 @@ async function runAuditJob(projectId, targets) {
 场次：${JSON.stringify(scenes)}
 分镜：${JSON.stringify(groups)}
 资产：${JSON.stringify(assets)}`;
-  const data = parseAIJson(await callAI(FILM_SYSTEM, prompt));
+  const data = parseAIJson(await callAI(FILM_SYSTEM, prompt, { json: true }));
   await Store.put({
     id: `analysis_${projectId}_quality_audit`, projectId, kind: 'analysis',
     subtype: 'quality_audit', name: '质量与连续性检查', status: 'ai_draft',
