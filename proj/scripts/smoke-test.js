@@ -4,7 +4,7 @@ const port = 3210;
 const base = `http://127.0.0.1:${port}`;
 const child = spawn(process.execPath, ['server.js'], {
   cwd: process.cwd(),
-  env: { ...process.env, PORT: String(port), DATABASE_URL: '', AI_API_KEY: '', DEEPSEEK_API_KEY: '', ANTHROPIC_API_KEY: '' },
+  env: { ...process.env, PORT: String(port), RENDER: 'true', DATABASE_URL: '', AI_API_KEY: '', DEEPSEEK_API_KEY: '', ANTHROPIC_API_KEY: '' },
   stdio: ['ignore', 'pipe', 'pipe']
 });
 
@@ -57,9 +57,23 @@ const jsonRequest = async (url, options = {}) => {
     const form = new FormData();
     form.append('files', new Blob(['第1场 日 内景\\n林默走进工作室。']), 'smoke-script.txt');
     form.append('kind', 'script');
-    const uploadResponse = await fetch(`${base}/api/projects/${projectId}/files`, { method: 'POST', body: form });
+    const uploadResponse = await fetch(`${base}/api/projects/${projectId}/files`, {
+      method: 'POST',
+      body: form,
+      headers: { 'x-forwarded-for': '203.0.113.10' }
+    });
     if (!uploadResponse.ok) throw new Error(`上传失败：${uploadResponse.status}`);
     const uploaded = await uploadResponse.json();
+
+    const oversizedForm = new FormData();
+    oversizedForm.append('files', new Blob([new Uint8Array(15 * 1024 * 1024 + 1)]), 'oversized.txt');
+    oversizedForm.append('kind', 'document');
+    const oversizedResponse = await fetch(`${base}/api/projects/${projectId}/files`, {
+      method: 'POST',
+      body: oversizedForm,
+      headers: { 'x-forwarded-for': '203.0.113.10' }
+    });
+    const oversizedPayload = await oversizedResponse.json();
 
     const created = await jsonRequest(`${base}/api/projects/${projectId}/records`, {
       method: 'POST',
@@ -132,6 +146,9 @@ const jsonRequest = async (url, options = {}) => {
       || !inheritedGroup?.data?.lineRefs?.includes('romance')
       || resolvedComment.data?.timecode !== '00:06'
       || resolvedComment.data?.resolved !== true
+      || oversizedResponse.status !== 413
+      || !oversizedPayload.error?.includes('15MB')
+      || stderr.includes('ERR_ERL_UNEXPECTED_X_FORWARDED_FOR')
     ) {
       throw new Error('核心工作流断言失败');
     }
@@ -150,7 +167,9 @@ const jsonRequest = async (url, options = {}) => {
       upload: uploaded.files[0].name,
       manualRecordStatus: approved.status,
       sceneLinePropagation: inheritedGroup.data.lineRefs,
-      timecodedFeedback: resolvedComment.data.timecode
+      timecodedFeedback: resolvedComment.data.timecode,
+      oversizedUploadStatus: oversizedResponse.status,
+      proxyValidationClean: true
     }));
   } finally {
     child.kill();

@@ -43,7 +43,8 @@ const state = {
   selectedShotGroupId: initialParams.get('group') || '',
   selectedAnalysisType: initialParams.get('graph') || '',
   selectedKnowledge: new Set(),
-  pendingFiles: []
+  pendingFiles: [],
+  activeUpload: null
 };
 
 const $ = selector => document.querySelector(selector);
@@ -82,10 +83,12 @@ function toast(message, type = '') {
   toast.timer = setTimeout(() => el.className = 'toast', 3200);
 }
 
-function loading(on, title = 'AI正在分析') {
+function loading(on, title = 'AI正在分析', detail = '结果会先保存为草稿') {
   $('#loading-title').textContent = title;
+  $('#loading-detail').textContent = detail;
   $('#loading-overlay').classList.toggle('on', on);
   $('#loading-overlay').setAttribute('aria-hidden', on ? 'false' : 'true');
+  if (!on) $('#cancel-upload').hidden = true;
 }
 
 async function bootstrap(silent = false) {
@@ -545,18 +548,53 @@ function updateUploadSelection() {
 
 async function uploadFiles(kind) {
   if (!state.pendingFiles.length) return toast('请先选择文件','error');
+  if (state.pendingFiles.length > 12) return toast('一次最多上传 12 个文件','error');
+  const oversized = state.pendingFiles.find(file => file.size > 15 * 1024 * 1024);
+  if (oversized) return toast(`${oversized.name} 超过 15MB，请压缩或拆分后再上传`,'error');
   const body = new FormData();
   body.append('kind',kind);
   state.pendingFiles.forEach(file => body.append('files',file));
-  loading(true,'正在上传并解析资料');
+  loading(true,'正在上传资料','准备发送…');
+  $('#cancel-upload').hidden = false;
   try {
-    await api(`/api/projects/${encodeURIComponent(state.projectId)}/files`, { method:'POST',body });
+    await uploadRequest(`/api/projects/${encodeURIComponent(state.projectId)}/files`, body, progress => {
+      const percent = progress.total ? Math.min(100, Math.round(progress.loaded / progress.total * 100)) : 0;
+      $('#loading-title').textContent = progress.uploaded ? '正在解析并保存资料' : `正在上传资料 ${percent}%`;
+      $('#loading-detail').textContent = progress.uploaded
+        ? '服务器正在提取文本，复杂 PDF 可能需要几十秒'
+        : `${formatSize(progress.loaded)} / ${formatSize(progress.total)}`;
+    });
     toast('资料已上传，基础文本解析完成');
     state.pendingFiles = [];
     await bootstrap(true);
     switchView('sources');
-  } catch (error) { toast(error.message,'error'); }
-  finally { loading(false); }
+  } catch (error) {
+    toast(error.name === 'AbortError' ? '上传已取消' : error.message,'error');
+  } finally {
+    state.activeUpload = null;
+    loading(false);
+  }
+}
+
+function uploadRequest(url, body, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    state.activeUpload = xhr;
+    xhr.open('POST', url);
+    xhr.responseType = 'json';
+    xhr.timeout = 120000;
+    xhr.upload.onprogress = event => onProgress?.({ loaded:event.loaded, total:event.total, uploaded:false });
+    xhr.upload.onload = () => onProgress?.({ loaded:1, total:1, uploaded:true });
+    xhr.onload = () => {
+      const payload = xhr.response || (() => { try { return JSON.parse(xhr.responseText); } catch { return {}; } })();
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(payload);
+      reject(new Error(payload?.error || `上传失败 HTTP ${xhr.status}`));
+    };
+    xhr.onerror = () => reject(new Error('网络连接中断，请检查网络后重试。'));
+    xhr.ontimeout = () => reject(new Error('上传或解析超过 2 分钟，请拆分文件后重试。'));
+    xhr.onabort = () => reject(new DOMException('上传已取消','AbortError'));
+    xhr.send(body);
+  });
 }
 
 function bindEvents() {
@@ -841,6 +879,7 @@ function bindEvents() {
       shotGroupId:groupId,fields,targetModel:form.get('targetModel'),mode:form.get('mode')
     },'正在生成分镜字段');
   });
+  $('#cancel-upload').addEventListener('click',() => state.activeUpload?.abort());
   $('#refresh-button').addEventListener('click',() => bootstrap());
 }
 
