@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "check": "node --check server.js && node --check public/workflow.js && node --check scripts/script-scene-test.js",
-    "test": "node scripts/linking-test.js && node scripts/smoke-test.js",
+    "test": "node scripts/linking-test.js && node scripts/provider-test.js && node scripts/smoke-test.js",
     "test:script": "node scripts/script-scene-test.js"
   },
   "engines": {

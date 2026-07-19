@@ -43,9 +43,13 @@ npm run test:script -- "C:\path\to\最新剧本.docx"
 |---|---|
 | `DATABASE_URL` | PostgreSQL 连接串；线上上传与工作流数据建议配置 |
 | `DEEPSEEK_API_KEY` | DeepSeek 服务端密钥 |
-| `DEEPSEEK_MODEL` | 默认 `deepseek-v4-flash` |
 | `ANTHROPIC_API_KEY` | 可选的 Anthropic 服务端密钥 |
-| `AI_PROVIDER` | `deepseek` 或 `anthropic` |
+| `AI_PROVIDER` | `deepseek`、`anthropic`、`kimi` 或 `openai_compatible` |
+| `MOONSHOT_API_KEY` | Kimi 中国区服务端密钥 |
+| `KIMI_BASE_URL` | Kimi 中国区默认 `https://api.moonshot.cn/v1` |
+| `AI_API_KEY` | 自定义 OpenAI-compatible 接口密钥 |
+| `AI_BASE_URL` | 自定义 OpenAI-compatible 基础地址，例如 `https://example.com/v1` |
+| `AI_MODEL` | 当前提供商使用的模型；Kimi 默认 `kimi-k3` |
 | `ADMIN_PASSWORD` | 管理配置和删除操作所需密码 |
 | `CORS_ORIGIN` | 可选的跨域来源白名单 |
 | `AI_RATE_LIMIT` | 每小时 AI 请求上限，默认 40 |
@@ -56,3 +60,9 @@ npm run test:script -- "C:\path\to\最新剧本.docx"
 Render Web Service 的 Root Directory 设为 `proj`，Build Command 为 `npm install`，Start Command 为 `npm start`。生产环境建议绑定 Render Postgres 并设置 `DATABASE_URL`，避免实例重启时丢失工作流数据。
 
 AI 密钥仅由服务端读取；浏览器不会收到明文密钥。提示词生成约束基于 `aigc-film-prompts v4.7` 的结构化规范。
+
+### 切换到 Kimi
+
+在 Render 环境变量中设置 `AI_PROVIDER=kimi`、`MOONSHOT_API_KEY`、`AI_MODEL=kimi-k3`
+和 `KIMI_BASE_URL=https://api.moonshot.cn/v1`。中国区 Key 必须配合 `.cn` 接口，
+国际区 Key 则使用 `https://api.moonshot.ai/v1`。

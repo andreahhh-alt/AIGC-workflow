@@ -299,17 +299,41 @@ async function seedSijizhidi() {
 
 // ---------- AI 服务 ----------
 function config() { return readJSON(CONFIG_FILE, {}); }
-function provider() { return config().provider || process.env.AI_PROVIDER || 'deepseek'; }
+function provider() { return process.env.AI_PROVIDER || config().provider || 'deepseek'; }
 function apiKey() {
-  const saved = config().apiKey;
-  if (saved) return saved;
-  return provider() === 'anthropic'
-    ? (process.env.ANTHROPIC_API_KEY || '')
-    : (process.env.DEEPSEEK_API_KEY || '');
+  const envKeys = {
+    anthropic: process.env.ANTHROPIC_API_KEY,
+    deepseek: process.env.DEEPSEEK_API_KEY,
+    kimi: process.env.MOONSHOT_API_KEY || process.env.KIMI_API_KEY,
+    openai_compatible: process.env.AI_API_KEY
+  };
+  return envKeys[provider()] || config().apiKey || '';
 }
 function model() {
-  return config().model || process.env.AI_MODEL ||
-    (provider() === 'anthropic' ? 'claude-sonnet-4-5' : 'deepseek-v4-flash');
+  const defaults = {
+    anthropic: 'claude-sonnet-4-5',
+    deepseek: 'deepseek-v4-flash',
+    kimi: 'kimi-k3',
+    openai_compatible: ''
+  };
+  return process.env.AI_MODEL || config().model || defaults[provider()] || '';
+}
+function aiBaseUrl() {
+  const urls = {
+    deepseek: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
+    kimi: process.env.KIMI_BASE_URL || 'https://api.moonshot.cn/v1',
+    openai_compatible: process.env.AI_BASE_URL || ''
+  };
+  return String(urls[provider()] || '').replace(/\/+$/, '');
+}
+function keySource() {
+  const envConfigured = {
+    anthropic: process.env.ANTHROPIC_API_KEY,
+    deepseek: process.env.DEEPSEEK_API_KEY,
+    kimi: process.env.MOONSHOT_API_KEY || process.env.KIMI_API_KEY,
+    openai_compatible: process.env.AI_API_KEY
+  };
+  return envConfigured[provider()] ? 'env' : (config().apiKey ? 'saved' : 'none');
 }
 function isAdmin(req) {
   const expected = process.env.ADMIN_PASSWORD;
@@ -338,7 +362,10 @@ async function callAI(system, user) {
     if (!response.ok) throw new Error(data?.error?.message || `Anthropic HTTP ${response.status}`);
     return (data.content || []).filter(item => item.type === 'text').map(item => item.text).join('\n').trim();
   }
-  const response = await fetch('https://api.deepseek.com/chat/completions', {
+  const baseUrl = aiBaseUrl();
+  if (!baseUrl) throw new Error('服务器尚未配置兼容接口的 AI_BASE_URL。');
+  if (!model()) throw new Error('服务器尚未配置 AI_MODEL。');
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
     body: JSON.stringify({
@@ -349,7 +376,7 @@ async function callAI(system, user) {
   const raw = await response.text();
   let data = {};
   try { data = JSON.parse(raw); } catch {}
-  if (!response.ok) throw new Error(data?.error?.message || `DeepSeek HTTP ${response.status}`);
+  if (!response.ok) throw new Error(data?.error?.message || `${provider()} HTTP ${response.status}`);
   return data?.choices?.[0]?.message?.content?.trim() || '';
 }
 
@@ -1238,14 +1265,14 @@ app.post('/api/analyze', aiLimiter, async (req, res) => {
 app.get('/api/config/status', (req, res) => {
   res.json({
     keyConfigured: !!apiKey(), provider: provider(), model: model(),
-    source: config().apiKey ? 'saved' : (apiKey() ? 'env' : 'none'),
+    source: keySource(),
     storage: pool ? 'postgres' : 'file'
   });
 });
 app.post('/api/config/key', (req, res) => {
   if (!isAdmin(req)) return res.status(401).json({ error: '管理员密码错误。' });
   const next = config();
-  if (['deepseek', 'anthropic'].includes(req.body?.provider)) next.provider = req.body.provider;
+  if (['deepseek', 'anthropic', 'kimi', 'openai_compatible'].includes(req.body?.provider)) next.provider = req.body.provider;
   if (typeof req.body?.key === 'string' && req.body.key.trim()) next.apiKey = req.body.key.trim();
   if (typeof req.body?.model === 'string') next.model = req.body.model.trim();
   writeJSON(CONFIG_FILE, next);
@@ -1289,5 +1316,10 @@ module.exports = {
   linkAnalysisData,
   parseScriptSceneBlocks,
   canonicalSceneKey,
-  stableId
+  stableId,
+  provider,
+  apiKey,
+  model,
+  aiBaseUrl,
+  callAI
 };
