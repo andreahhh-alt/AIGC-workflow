@@ -152,6 +152,23 @@ const jsonRequest = async (url, options = {}) => {
     });
     const linkedBootstrap = await jsonRequest(`${base}/api/workflow/bootstrap?projectId=${projectId}`);
     const inheritedGroup = linkedBootstrap.shotGroups.find(item => item.id === manualGroup.id);
+    const jobStartedAt = Date.now();
+    const jobResponse = await fetch(`${base}/api/projects/${projectId}/ai/jobs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'prompt',
+        targets: [manualGroup.id],
+        scope: {
+          shotGroupId: manualGroup.id,
+          fields: ['prompt'],
+          targetModel: 'general',
+          mode: 't2v'
+        }
+      })
+    });
+    const queuedJob = await jobResponse.json();
+    const jobSubmissionMs = Date.now() - jobStartedAt;
 
     if (
       uploaded.files?.length !== 1
@@ -163,6 +180,9 @@ const jsonRequest = async (url, options = {}) => {
       || oversizedResponse.status !== 413
       || !oversizedPayload.error?.includes('15MB')
       || stderr.includes('ERR_ERL_UNEXPECTED_X_FORWARDED_FOR')
+      || jobResponse.status !== 202
+      || queuedJob.job?.status !== 'running'
+      || jobSubmissionMs > 1500
     ) {
       throw new Error('核心工作流断言失败');
     }
@@ -184,6 +204,8 @@ const jsonRequest = async (url, options = {}) => {
       timecodedFeedback: resolvedComment.data.timecode,
       oversizedUploadStatus: oversizedResponse.status,
       proxyValidationClean: true,
+      backgroundJobStatus: jobResponse.status,
+      backgroundJobSubmissionMs: jobSubmissionMs,
       aiProvider: bootstrap.ai.provider,
       aiModel: bootstrap.ai.model
     }));
