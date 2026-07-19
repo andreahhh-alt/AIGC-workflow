@@ -92,6 +92,7 @@ async function bootstrap(silent = false) {
   try {
     const query = state.projectId ? `?projectId=${encodeURIComponent(state.projectId)}` : '';
     state.data = await api(`/api/workflow/bootstrap${query}`);
+    state.data.comments ||= [];
     if (!state.projectId && state.data.project) state.projectId = state.data.project.id;
     if (!state.selectedSceneId || !state.data.scenes.some(scene => scene.id === state.selectedSceneId)) {
       state.selectedSceneId = state.data.scenes[0]?.id || '';
@@ -117,6 +118,8 @@ function renderAll() {
   renderStoryboard();
   renderReview();
   renderNavigationCounts();
+  renderSceneRail();
+  renderContextCommand();
 }
 
 function sceneLines(scene) {
@@ -128,6 +131,11 @@ function sceneLines(scene) {
 
 function lineTag(line, primary = false) {
   return `<span class="line-tag ${escapeHtml(line)} ${primary ? 'primary' : ''}">${escapeHtml(STORY_LINE_NAMES[line] || line || '未分类')}</span>`;
+}
+
+function recordSceneIds(record) {
+  const refs = Array.isArray(record?.data?.sceneRefs) ? record.data.sceneRefs : [];
+  return [...new Set(refs.map(ref => typeof ref === 'string' ? ref : ref.sceneId).filter(Boolean))];
 }
 
 function renderProjectSwitcher() {
@@ -220,7 +228,10 @@ function renderKnowledgeDetail() {
       <div class="graph-switcher">${analyses.map(item => `<button class="chip ${item.subtype === analysis.subtype ? 'active' : ''}" data-open-analysis="${item.subtype}">${escapeHtml(item.name)}</button>`).join('')}</div>
     </div>
     <div class="graph-stats"><span>${nodes.length} 个节点</span><span>${edges.length} 条关系</span><span>${analysis.data?.linkedSceneCount || 0} 个已链接场次</span></div>
-    <div class="graph-node-list">${nodes.length ? nodes.map((node,index) => {
+    <div class="story-map-canvas">
+      <div class="map-grid-lines"></div>
+      <div class="story-lane-label"><span>${escapeHtml(analysis.name)}</span><small>按剧本顺序展开 · 横向滚动</small></div>
+      <div class="graph-node-list">${nodes.length ? nodes.map((node,index) => {
       const refs = Array.isArray(node.sceneRefs) ? node.sceneRefs : [];
       return `<article class="graph-node">
         <span class="node-index">${String(index + 1).padStart(2,'0')}</span>
@@ -231,7 +242,8 @@ function renderKnowledgeDetail() {
           ).join('') : '<span class="scene-ref unresolved">未关联场次</span>'}</div>
         </div>
       </article>`;
-    }).join('') : '<div class="empty-state">这一分析还没有结构化节点，可点击“重新生成”升级为可导航图谱。</div>'}</div>`;
+    }).join('') : '<div class="empty-state">这一分析还没有结构化节点，可点击“重新生成”升级为可导航图谱。</div>'}</div>
+    </div>`;
 }
 
 function renderAssets() {
@@ -240,14 +252,23 @@ function renderAssets() {
     return `<button class="chip ${state.assetFilter === type ? 'active' : ''}" data-asset-filter="${type}">${label} · ${count}</button>`;
   }).join('');
   const assets = state.data.assets.filter(asset => state.assetFilter === 'all' || asset.subtype === state.assetFilter);
-  $('#asset-grid').innerHTML = assets.length ? assets.map(asset => `<article class="asset-card">
-    <div class="asset-visual"><span>${escapeHtml(asset.subtype.toUpperCase())}</span></div>
+  $('#asset-grid').innerHTML = assets.length ? assets.map((asset,index) => {
+    const sceneIds = recordSceneIds(asset);
+    const sceneLabels = sceneIds.map(id => state.data.scenes.find(scene => scene.id === id)?.data?.displaySceneNo).filter(Boolean);
+    const image = asset.data?.imageUrl || asset.data?.thumbnailUrl || '';
+    return `<article class="asset-card asset-${escapeHtml(asset.subtype)}" data-asset-scenes="${escapeHtml(sceneIds.join(','))}">
+    <div class="asset-visual ${image ? 'has-image' : ''}" ${image ? `style="background-image:url('${escapeHtml(image)}')"` : ''}>
+      <span>${escapeHtml(asset.subtype.toUpperCase())}</span><b>${String(index + 1).padStart(2,'0')}</b>
+      ${!image ? `<em>${escapeHtml(asset.name.slice(0,2))}</em>` : ''}
+    </div>
     <div class="asset-body">
       <h3>${escapeHtml(asset.name)}</h3>
       <p>${escapeHtml(asset.data?.description || '等待补充资产描述与视觉锚点。')}</p>
+      <div class="asset-scenes">${sceneLabels.length ? sceneLabels.map(label => `<span>场${escapeHtml(label)}</span>`).join('') : '<span>尚未绑定场次</span>'}</div>
       <footer>${statusTag(asset.status)}<button class="text-button" data-approve="${asset.id}">${asset.status === 'locked' ? '已锁定' : '确认并锁定'}</button></footer>
     </div>
-  </article>`).join('') : '<div class="empty-state">还没有资产。可以选择角色、场景、道具、风格或声音类别让AI提取，也可以人工新建。</div>';
+  </article>`;
+  }).join('') : '<div class="empty-state">还没有资产。可以选择角色、场景、道具、风格或声音类别让AI提取，也可以人工新建。</div>';
 }
 
 function renderStoryboard() {
@@ -285,6 +306,7 @@ function renderStoryboard() {
   if (!scene) {
     $('#scene-detail').innerHTML = '<div><span class="kicker">NO SCENE</span><h2>尚未建立场次</h2><p>上传剧本后，可按全部剧本或指定范围拆分。</p></div>';
     $('#shot-list').innerHTML = '';
+    $('#shot-inspector').innerHTML = '<div class="inspector-empty">选择场次后，在这里查看分镜详情。</div>';
     return;
   }
   const backlinks = state.data.analyses.flatMap(analysis =>
@@ -317,33 +339,115 @@ function renderStoryboard() {
   const groups = state.sceneLineFilter === 'all'
     ? allGroups
     : allGroups.filter(group => (group.data?.lineRefs || []).includes(state.sceneLineFilter));
+  if (groups.length && !groups.some(group => group.id === state.selectedShotGroupId)) {
+    state.selectedShotGroupId = groups[0].id;
+  }
   $('#shot-list').innerHTML = groups.length ? groups.map(renderShotCard).join('') : '<div class="empty-state">本场还没有15秒分镜组。</div>';
+  renderShotInspector();
+  renderSceneRail();
+  renderContextCommand();
 }
 
 function renderShotCard(group) {
   const beats = group.data?.beats || [];
   const colors = group.data?.colorCard || [];
-  return `<article class="shot-card ${group.id === state.selectedShotGroupId ? 'targeted' : ''}" id="shot-${escapeHtml(group.id)}">
-    <header class="shot-card-head">
+  const hasPrompt = Boolean(group.data?.promptZh || group.data?.promptEn);
+  return `<article class="shot-frame ${group.id === state.selectedShotGroupId ? 'selected' : ''}" id="shot-${escapeHtml(group.id)}" data-select-shot="${escapeHtml(group.id)}" tabindex="0">
+    <div class="shot-preview">
       <span class="shot-code">${escapeHtml(group.data?.code || '')}</span>
-      <div><h3>${escapeHtml(group.data?.title || group.name)}</h3><small>${escapeHtml(group.subtype)} · ${group.data?.duration || 15}s · ${escapeHtml(group.data?.mode || 'T2V')} · ${escapeHtml(group.data?.targetModel || '通用')}</small>
-      <div class="scene-line-tags">${(group.data?.lineRefs || []).map(line => lineTag(line,line === group.data?.primaryLine)).join('')}</div></div>
-      ${statusTag(group.status)}
-    </header>
-    <div class="shot-card-body">
-      <div>
-        <div class="beat-track">${beats.length ? beats.map(beat => `<div class="beat"><b>${escapeHtml(beat.time)}</b><span>${escapeHtml(beat.action)}</span></div>`).join('') : '<div class="beat"><b>待规划</b><span>点击AI生成分镜方案或提示词字段</span></div>'}</div>
-        ${colors.length ? `<div class="color-strip">${colors.map(color => `<i style="background:${escapeHtml(color.hex)}" title="${escapeHtml(color.name)}"></i>`).join('')}</div>` : ''}
-      </div>
-      <div class="shot-actions">
-        <button data-prompt="${group.id}">AI生成字段</button>
-        <button data-edit-group-lines="${group.id}">编辑线路</button>
-        <button data-approve="${group.id}">确认/锁定</button>
-        <button data-copy="${group.id}">复制中文提示词</button>
-        <button data-feedback="${group.id}">查看提示词</button>
-      </div>
+      <b>${escapeHtml(group.data?.duration || 15)}s</b>
+      <em>${hasPrompt ? 'PROMPT READY' : 'AI DRAFT'}</em>
+      ${colors.length ? `<div class="color-strip">${colors.map(color => `<i style="background:${escapeHtml(color.hex)}" title="${escapeHtml(color.name)}"></i>`).join('')}</div>` : ''}
+    </div>
+    <div class="shot-frame-body">
+      <div class="shot-frame-title"><h3>${escapeHtml(group.data?.title || group.name)}</h3>${statusTag(group.status)}</div>
+      <small>${escapeHtml(group.subtype)} · ${escapeHtml(group.data?.mode || 'T2V')} · ${escapeHtml(group.data?.targetModel || '通用')}</small>
+      <div class="mini-beats">${beats.length ? beats.slice(0,4).map(beat => `<i title="${escapeHtml(beat.action)}"></i>`).join('') : '<i></i><i></i><i></i>'}</div>
+      <div class="scene-line-tags">${(group.data?.lineRefs || []).slice(0,3).map(line => lineTag(line,line === group.data?.primaryLine)).join('')}</div>
     </div>
   </article>`;
+}
+
+function renderShotInspector() {
+  const panel = $('#shot-inspector');
+  if (!panel) return;
+  const group = state.data.shotGroups.find(item => item.id === state.selectedShotGroupId);
+  if (!group) {
+    panel.innerHTML = '<div class="inspector-empty"><span>SHOT INSPECTOR</span><strong>选择一个分镜组</strong><p>提示词、色卡、线路与反馈会在这里集中处理。</p></div>';
+    return;
+  }
+  const scene = state.data.scenes.find(item => item.id === group.data?.sceneId);
+  const beats = Array.isArray(group.data?.beats) ? group.data.beats : [];
+  const colors = Array.isArray(group.data?.colorCard) ? group.data.colorCard : [];
+  const comments = (state.data.comments || []).filter(item => item.data?.shotGroupId === group.id);
+  panel.innerHTML = `
+    <div class="inspector-head"><span>SHOT INSPECTOR</span><b>${escapeHtml(group.data?.code || '')}</b></div>
+    <h2>${escapeHtml(group.data?.title || group.name)}</h2>
+    <p class="inspector-meta">场 ${escapeHtml(scene?.data?.displaySceneNo || '—')} · ${group.data?.duration || 15}s · ${escapeHtml(group.data?.mode || 'T2V')}</p>
+    <div class="inspector-lines">${(group.data?.lineRefs || []).map(line => lineTag(line,line === group.data?.primaryLine)).join('') || '<span class="status">待分类</span>'}</div>
+    <section class="inspector-section">
+      <header><span>节奏 / 15秒</span><small>${beats.length} 个动作拍点</small></header>
+      <div class="inspector-beats">${beats.length ? beats.map(beat => `<div><b>${escapeHtml(beat.time)}</b><p>${escapeHtml(beat.action)}</p></div>`).join('') : '<p class="muted-copy">尚未生成动作节奏。</p>'}</div>
+    </section>
+    <section class="inspector-section">
+      <header><span>提示词</span><small>${group.data?.promptZh ? '已生成' : '等待生成'}</small></header>
+      <p class="prompt-preview">${escapeHtml(group.data?.promptZh || '在保留人物、场景和连续性约束的前提下，由你决定何时调用 AI。')}</p>
+      ${colors.length ? `<div class="inspector-palette">${colors.map(color => `<i style="background:${escapeHtml(color.hex)}"><span>${escapeHtml(color.name || color.hex)}</span></i>`).join('')}</div>` : ''}
+      <div class="inspector-actions">
+        <button data-prompt="${group.id}" class="primary-button">AI生成 / 再生成</button>
+        <button data-copy="${group.id}">复制提示词</button>
+        <button data-feedback="${group.id}">展开查看</button>
+        <button data-edit-group-lines="${group.id}">编辑线路</button>
+        <button data-approve="${group.id}">确认并锁定</button>
+      </div>
+    </section>
+    <section class="inspector-section feedback-section">
+      <header><span>时间码反馈</span><small>${comments.filter(item => !item.data?.resolved).length} 条待处理</small></header>
+      <div class="feedback-list">${comments.length ? comments.map(comment => `<article class="${comment.data?.resolved ? 'resolved' : ''}">
+        <div><b>${escapeHtml(comment.data?.timecode || '00:00')}</b><span>${escapeHtml(comment.data?.role || '导演')}</span></div>
+        <p>${escapeHtml(comment.data?.text || comment.name)}</p>
+        ${comment.data?.resolved ? '<small>已解决</small>' : `<button data-resolve-comment="${comment.id}">标记解决</button>`}
+      </article>`).join('') : '<p class="muted-copy">还没有反馈。评论会固定在本分镜的时间码上。</p>'}</div>
+      <form id="feedback-form">
+        <div><select name="timecode"><option>00:00</option><option>00:03</option><option>00:06</option><option>00:09</option><option>00:12</option></select>
+        <select name="role"><option value="导演">导演</option><option value="制片">制片</option><option value="客户">客户</option><option value="AI建议">AI建议</option></select></div>
+        <textarea name="text" rows="2" placeholder="在这个时间点需要调整什么？" required></textarea>
+        <button class="secondary-button" type="submit">添加反馈</button>
+      </form>
+    </section>`;
+}
+
+function renderSceneRail() {
+  const rail = $('#scene-rail');
+  if (!rail || !state.data) return;
+  rail.innerHTML = state.data.scenes.length ? state.data.scenes.map(scene => {
+    const primary = scene.data?.primaryLine || 'other';
+    const count = state.data.shotGroups.filter(group => group.data?.sceneId === scene.id).length;
+    return `<button class="rail-scene line-${escapeHtml(primary)} ${scene.id === state.selectedSceneId ? 'active' : ''}" data-rail-scene="${scene.id}" title="${escapeHtml(scene.data?.heading || scene.name)}">
+      <b>${escapeHtml(scene.data?.displaySceneNo || scene.data?.sceneNo || '—')}</b><span>${count}</span>
+    </button>`;
+  }).join('') : '<span class="rail-empty">上传剧本后，全部场次会成为贯穿网站的导航坐标。</span>';
+}
+
+function renderContextCommand() {
+  const bar = $('#context-command');
+  if (!bar || !state.data) return;
+  const scene = state.data.scenes.find(item => item.id === state.selectedSceneId);
+  const group = state.data.shotGroups.find(item => item.id === state.selectedShotGroupId);
+  bar.innerHTML = `<div><span>当前上下文</span><strong>${scene ? `场 ${escapeHtml(scene.data?.displaySceneNo || '')} · ${escapeHtml(scene.data?.heading || scene.name)}` : '项目全局'}${group ? ` / ${escapeHtml(group.data?.code || group.name)}` : ''}</strong></div>
+    <div class="command-actions">
+      ${group ? '<button data-command="prompt">✦ 生成提示词</button>' : ''}
+      ${scene ? '<button data-command="map">↗ 查看关联图谱</button>' : ''}
+      <button data-command="audit">◎ 连续性检查</button>
+    </div>`;
+}
+
+function selectShot(groupId) {
+  state.selectedShotGroupId = groupId;
+  $$('.shot-frame').forEach(card => card.classList.toggle('selected', card.dataset.selectShot === groupId));
+  renderShotInspector();
+  renderContextCommand();
+  syncRoute();
 }
 
 function renderReview() {
@@ -395,7 +499,7 @@ function switchView(view, updateRoute = true) {
 
 function jumpToScene(sceneId, groupId = '') {
   state.selectedSceneId = sceneId;
-  state.selectedShotGroupId = groupId;
+  state.selectedShotGroupId = groupId || state.data.shotGroups.find(item => item.data?.sceneId === sceneId)?.id || '';
   state.sceneLineFilter = 'all';
   switchView('storyboard');
   renderStoryboard();
@@ -404,7 +508,7 @@ function jumpToScene(sceneId, groupId = '') {
 
 function revealSelectedShot() {
   if (!state.selectedShotGroupId) return;
-  requestAnimationFrame(() => document.getElementById(`shot-${state.selectedShotGroupId}`)?.scrollIntoView({ behavior:'smooth', block:'center' }));
+  requestAnimationFrame(() => document.getElementById(`shot-${state.selectedShotGroupId}`)?.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' }));
 }
 
 async function runAI(action, targets, scope = {}, title = 'AI正在分析') {
@@ -594,6 +698,16 @@ function bindEvents() {
     const button = event.target.closest('[data-approve]');
     if (button) approveRecord(button.dataset.approve,'locked');
   });
+  $('#asset-grid').addEventListener('mouseover',event => {
+    const card = event.target.closest('[data-asset-scenes]');
+    if (!card) return;
+    const ids = card.dataset.assetScenes.split(',').filter(Boolean);
+    $$('.rail-scene').forEach(button => button.classList.toggle('related',ids.includes(button.dataset.railScene)));
+  });
+  $('#asset-grid').addEventListener('mouseout',event => {
+    if (event.relatedTarget?.closest?.('[data-asset-scenes]') === event.target.closest('[data-asset-scenes]')) return;
+    $$('.rail-scene.related').forEach(button => button.classList.remove('related'));
+  });
   $('#scene-list').addEventListener('click',event => {
     const button = event.target.closest('[data-scene]');
     if (!button) return;
@@ -632,6 +746,8 @@ function bindEvents() {
     }
   });
   $('#shot-list').addEventListener('click',event => {
+    const shot = event.target.closest('[data-select-shot]');
+    if (shot) return selectShot(shot.dataset.selectShot);
     const promptButton = event.target.closest('[data-prompt]');
     if (promptButton) return openPromptDialog(promptButton.dataset.prompt);
     const approve = event.target.closest('[data-approve]');
@@ -642,6 +758,77 @@ function bindEvents() {
     if (copy) return copyPrompt(copy.dataset.copy);
     const feedback = event.target.closest('[data-feedback]');
     if (feedback) return previewPrompt(feedback.dataset.feedback);
+  });
+  $('#shot-list').addEventListener('keydown',event => {
+    const shot = event.target.closest('[data-select-shot]');
+    if (shot && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      selectShot(shot.dataset.selectShot);
+    }
+  });
+  $('#shot-inspector').addEventListener('click',async event => {
+    const promptButton = event.target.closest('[data-prompt]');
+    if (promptButton) return openPromptDialog(promptButton.dataset.prompt);
+    const approve = event.target.closest('[data-approve]');
+    if (approve) return approveRecord(approve.dataset.approve,'locked');
+    const editLines = event.target.closest('[data-edit-group-lines]');
+    if (editLines) return editGroupLines(editLines.dataset.editGroupLines);
+    const copy = event.target.closest('[data-copy]');
+    if (copy) return copyPrompt(copy.dataset.copy);
+    const feedback = event.target.closest('[data-feedback]');
+    if (feedback) return previewPrompt(feedback.dataset.feedback);
+    const resolve = event.target.closest('[data-resolve-comment]');
+    if (!resolve) return;
+    try {
+      await api(`/api/records/${encodeURIComponent(resolve.dataset.resolveComment)}`,{
+        method:'PATCH',body:JSON.stringify({status:'approved',data:{resolved:true}})
+      });
+      await bootstrap(true);
+      toast('反馈已标记解决');
+    } catch (error) { toast(error.message,'error'); }
+  });
+  $('#shot-inspector').addEventListener('submit',async event => {
+    if (event.target.id !== 'feedback-form') return;
+    event.preventDefault();
+    const group = state.data.shotGroups.find(item => item.id === state.selectedShotGroupId);
+    if (!group) return;
+    const form = new FormData(event.target);
+    try {
+      await api(`/api/projects/${encodeURIComponent(state.projectId)}/records`,{
+        method:'POST',
+        body:JSON.stringify({
+          kind:'comment',subtype:'shot_feedback',name:'时间码反馈',status:'review',
+          data:{
+            sceneId:group.data?.sceneId,shotGroupId:group.id,
+            timecode:form.get('timecode'),role:form.get('role'),
+            text:form.get('text'),resolved:false
+          }
+        })
+      });
+      await bootstrap(true);
+      toast('时间码反馈已添加');
+    } catch (error) { toast(error.message,'error'); }
+  });
+  $('#scene-rail').addEventListener('click',event => {
+    const button = event.target.closest('[data-rail-scene]');
+    if (button) jumpToScene(button.dataset.railScene);
+  });
+  $('#rail-toggle').addEventListener('click',() => {
+    const shell = $('#scene-rail-shell');
+    shell.classList.toggle('collapsed');
+    $('#rail-toggle').textContent = shell.classList.contains('collapsed') ? '⌃' : '⌄';
+  });
+  $('#context-command').addEventListener('click',event => {
+    const button = event.target.closest('[data-command]');
+    if (!button) return;
+    if (button.dataset.command === 'prompt' && state.selectedShotGroupId) return openPromptDialog(state.selectedShotGroupId);
+    if (button.dataset.command === 'map') {
+      switchView('knowledge');
+      return renderKnowledgeDetail();
+    }
+    if (button.dataset.command === 'audit') {
+      return runAI('audit',['continuity','axis','action_density','light','prompt_compatibility'],{},'正在检查分镜连续性');
+    }
   });
   $('#prompt-form').addEventListener('submit',event => {
     event.preventDefault();

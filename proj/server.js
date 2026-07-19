@@ -948,6 +948,7 @@ app.get('/api/workflow/bootstrap', async (req, res) => {
       assets: byKind('asset'),
       scenes: byKind('scene'),
       shotGroups: byKind('shot_group'),
+      comments: byKind('comment'),
       jobs: byKind('job').slice(0, 80),
       ai: {
         configured: !!apiKey(), provider: provider(), model: model(),
@@ -1011,7 +1012,7 @@ app.post('/api/projects/:projectId/records', async (req, res) => {
       return res.status(404).json({ error: '项目不存在' });
     }
 
-    const allowedKinds = new Set(['asset', 'scene', 'shot_group', 'analysis']);
+    const allowedKinds = new Set(['asset', 'scene', 'shot_group', 'analysis', 'comment']);
     const kind = String(req.body?.kind || '').trim();
     const name = String(req.body?.name || '').trim();
 
