@@ -71,6 +71,7 @@ const jsonRequest = async (url, options = {}) => {
       || !pageHtml.includes('knowledge-detail')
       || !pageHtml.includes('scene-rail')
       || !pageHtml.includes('shot-inspector')
+      || pageHtml.includes('href="/legacy"')
       || !Array.isArray(bootstrap.comments)
     ) {
       throw new Error('跨模块导航界面未加载');
@@ -78,7 +79,7 @@ const jsonRequest = async (url, options = {}) => {
 
     const projectId = bootstrap.project.id;
     const form = new FormData();
-    form.append('files', new Blob(['第1场 日 内景\\n林默走进工作室。']), 'smoke-script.txt');
+    form.append('files', new Blob(['第1场 日 内景\\n林默走进工作室。']), '冒烟剧本.txt');
     form.append('kind', 'script');
     const uploadResponse = await fetch(`${base}/api/projects/${projectId}/files`, {
       method: 'POST',
@@ -131,6 +132,19 @@ const jsonRequest = async (url, options = {}) => {
         data: { code: 'T1-1', sceneId: manualScene.id, primaryLine: 'male', lineRefs: ['male'] }
       })
     });
+    await jsonRequest(`${base}/api/records/${manualGroup.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        data: {
+          colorCard: [
+            { name: '冷青', hex: '#6EC6CC' },
+            { name: '警示琥珀', hex: '#E49A45' }
+          ]
+        }
+      })
+    });
+    const colorCardResponse = await fetch(`${base}/api/records/${manualGroup.id}/color-card.svg`);
+    const colorCardSvg = await colorCardResponse.text();
     const comment = await jsonRequest(`${base}/api/projects/${projectId}/records`, {
       method: 'POST',
       body: JSON.stringify({
@@ -181,6 +195,11 @@ const jsonRequest = async (url, options = {}) => {
 
     if (
       uploaded.files?.length !== 1
+      || uploaded.files?.[0]?.name !== '冒烟剧本.txt'
+      || !colorCardResponse.ok
+      || !colorCardResponse.headers.get('content-disposition')?.includes('attachment')
+      || !colorCardSvg.includes('<svg')
+      || !colorCardSvg.includes('#6EC6CC')
       || approved.status !== 'approved'
       || inheritedGroup?.data?.primaryLine !== 'female'
       || !inheritedGroup?.data?.lineRefs?.includes('romance')

@@ -8,9 +8,22 @@ process.env.KIMI_BASE_URL = 'https://api.moonshot.cn/v1/';
 let captured;
 global.fetch = async (url, options) => {
   captured = { url, options, body: JSON.parse(options.body) };
+  let streamed = false;
   return {
     ok: true,
     status: 200,
+    body: captured.body.stream ? {
+      getReader() {
+        return {
+          async read() {
+            if (streamed) return { done: true };
+            streamed = true;
+            const event = 'data: {"choices":[{"delta":{"content":"{\\"ok\\":true}"}}]}\n\ndata: [DONE]\n\n';
+            return { done: false, value: new TextEncoder().encode(event) };
+          }
+        };
+      }
+    } : null,
     async text() {
       return JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] });
     }
@@ -23,6 +36,7 @@ const {
   model,
   aiBaseUrl,
   callAI,
+  normalizeUploadFilename,
   WORKFLOW_SCHEMA_MIGRATIONS
 } = require('../server');
 
@@ -42,6 +56,7 @@ const {
   assert.equal(captured.options.headers.authorization, 'Bearer test-moonshot-key');
   assert.equal(captured.body.model, 'kimi-k3');
   assert.equal(captured.body.reasoning_effort, 'max');
+  assert.equal(captured.body.stream, true);
   assert.equal(captured.body.max_completion_tokens, 32768);
   assert.deepEqual(captured.body.response_format, { type: 'json_object' });
   assert.equal(captured.body.max_tokens, undefined);
@@ -56,8 +71,13 @@ const {
   assert.equal(captured.options.headers.authorization, 'Bearer test-deepseek-key');
   assert.equal(captured.body.model, 'deepseek-v4-flash');
   assert.equal(captured.body.max_tokens, 12000);
+  assert.equal(captured.body.stream, false);
   assert.deepEqual(captured.body.thinking, { type: 'disabled' });
   assert.deepEqual(captured.body.response_format, { type: 'json_object' });
+  const expectedFilename = '完整剧本.docx';
+  const latin1Filename = Buffer.from(expectedFilename, 'utf8').toString('latin1');
+  assert.equal(normalizeUploadFilename(latin1Filename), expectedFilename);
+  assert.equal(normalizeUploadFilename(expectedFilename), expectedFilename);
 
   console.log(JSON.stringify({
     ok: true,
