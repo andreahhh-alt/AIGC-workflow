@@ -196,6 +196,7 @@ const jsonRequest = async (url, options = {}) => {
     if (
       uploaded.files?.length !== 1
       || uploaded.files?.[0]?.name !== '冒烟剧本.txt'
+      || uploaded.files?.[0]?.subtype !== 'script'
       || !colorCardResponse.ok
       || !colorCardResponse.headers.get('content-disposition')?.includes('attachment')
       || !colorCardSvg.includes('<svg')

@@ -243,10 +243,18 @@ async function migrateUploadFilenames() {
     const files = await Store.list(project.id, 'file');
     for (const file of files) {
       const repaired = normalizeUploadFilename(file.name);
-      if (!repaired || repaired === file.name) continue;
-      file.name = repaired;
+      const inferredSubtype = classifyFile(repaired || file.name, file.data?.mime || '', 'auto');
+      const shouldRepairName = Boolean(repaired && repaired !== file.name);
+      const shouldRepairSubtype = file.subtype === 'document' && inferredSubtype !== 'document';
+      if (!shouldRepairName && !shouldRepairSubtype) continue;
+      if (shouldRepairName) file.name = repaired;
+      if (shouldRepairSubtype) file.subtype = inferredSubtype;
       file.updatedAt = now();
-      file.data = { ...file.data, filenameEncodingRepaired: true };
+      file.data = {
+        ...file.data,
+        ...(shouldRepairName ? { filenameEncodingRepaired: true } : {}),
+        ...(shouldRepairSubtype ? { subtypeReclassified: true } : {})
+      };
       const stored = await Store.get(file.id, true);
       await Store.put(file, stored?.blob || null);
     }
