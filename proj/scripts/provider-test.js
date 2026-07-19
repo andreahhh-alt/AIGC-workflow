@@ -50,6 +50,15 @@ const {
     { role: 'user', content: '用户请求' }
   ]);
 
+  process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
+  await callAI('系统指令', '用户请求', { json: true, provider: 'deepseek' });
+  assert.equal(captured.url, 'https://api.deepseek.com/chat/completions');
+  assert.equal(captured.options.headers.authorization, 'Bearer test-deepseek-key');
+  assert.equal(captured.body.model, 'deepseek-v4-flash');
+  assert.equal(captured.body.max_tokens, 12000);
+  assert.deepEqual(captured.body.thinking, { type: 'disabled' });
+  assert.deepEqual(captured.body.response_format, { type: 'json_object' });
+
   console.log(JSON.stringify({
     ok: true,
     provider: provider(),
