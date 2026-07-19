@@ -225,6 +225,7 @@ async function initStore() {
   const projects = await Store.list(null, 'project');
   if (!projects.length) await seedSijizhidi();
   await migrateUploadFilenames();
+  await indexUploadedScriptScenes();
   await migrateExistingSceneLinks();
   await recoverInterruptedAIJobs();
 }
@@ -257,6 +258,88 @@ async function migrateUploadFilenames() {
       };
       const stored = await Store.get(file.id, true);
       await Store.put(file, stored?.blob || null);
+    }
+  }
+}
+
+async function indexUploadedScriptScenes() {
+  const projects = await Store.list(null, 'project');
+  for (const project of projects) {
+    const files = await Store.list(project.id, 'file');
+    const sourceFile = files
+      .filter(file => file.subtype === 'script' && file.textContent)
+      .sort((a, b) =>
+        Number(Boolean(b.data?.authoritative)) - Number(Boolean(a.data?.authoritative))
+        || (b.createdAt || 0) - (a.createdAt || 0)
+      )[0];
+    if (!sourceFile) continue;
+    const blocks = parseScriptSceneBlocks(sourceFile.textContent, sourceFile.name);
+    if (!blocks.length) continue;
+
+    const existingScenes = await Store.list(project.id, 'scene');
+    const counts = blocks.reduce((map, block) => {
+      const sceneNo = normalizeSceneNo(block.sceneNo);
+      map.set(sceneNo, (map.get(sceneNo) || 0) + 1);
+      return map;
+    }, new Map());
+    const occurrences = new Map();
+
+    for (const block of blocks) {
+      const sceneNo = normalizeSceneNo(block.sceneNo);
+      const occurrence = (occurrences.get(sceneNo) || 0) + 1;
+      occurrences.set(sceneNo, occurrence);
+      const normalized = normalizeSceneData(project.id, {
+        sceneNo,
+        heading: block.heading || '',
+        summary: '已从最新剧本建立场次索引，等待AI分析。',
+        sourceRefs: block.sourceRefs || [sourceFile.name],
+        primaryLine: 'other',
+        secondaryLines: [],
+        characters: [],
+        events: []
+      }, project, {
+        occurrence,
+        duplicateSceneNo: (counts.get(sceneNo) || 0) > 1,
+        sceneIndex: block.sceneIndex
+      });
+      const existing = existingScenes.find(scene =>
+        scene.data?.canonicalKey === normalized.canonicalKey
+        || (
+          normalizeSceneNo(scene.data?.sceneNo) === sceneNo
+          && Number(scene.data?.sceneOccurrence || 1) === occurrence
+        )
+      );
+      const sourceRefs = [...new Set([
+        ...(existing?.data?.sourceRefs || []),
+        ...(block.sourceRefs || [sourceFile.name])
+      ])];
+      const indexedData = {
+        ...normalized,
+        ...(existing?.data || {}),
+        sceneNo: normalized.sceneNo,
+        sceneRef: normalized.sceneRef,
+        displaySceneNo: normalized.displaySceneNo,
+        sceneOccurrence: normalized.sceneOccurrence,
+        sceneIndex: normalized.sceneIndex,
+        numberingConflict: normalized.numberingConflict,
+        canonicalKey: normalized.canonicalKey,
+        sourceRefs,
+        indexSourceFileId: sourceFile.id,
+        indexedFromScript: true
+      };
+      await Store.put({
+        id: existing?.id || normalized.sceneId,
+        projectId: project.id,
+        kind: 'scene',
+        subtype: 'script_scene',
+        name: existing?.name || `场${normalized.displaySceneNo} · ${normalized.heading}`,
+        status: existing?.status || 'indexed',
+        data: indexedData,
+        textContent: existing?.textContent || block.sourceText || null,
+        order: Number(block.sceneIndex || 0) * 100,
+        createdAt: existing?.createdAt || now(),
+        updatedAt: existing?.updatedAt || now()
+      });
     }
   }
 }
@@ -546,6 +629,7 @@ const STORY_LINES = new Set(['male', 'female', 'supporting', 'ensemble', 'world'
 const normalizeSceneNo = value => String(value ?? '')
   .trim()
   .replace(/^第\s*/u, '')
+  .replace(/^场\s*/u, '')
   .replace(/\s*场$/u, '')
   .replace(/\s+/g, '');
 const canonicalSceneKey = (episodeNo, sceneNo, occurrence = 1) =>
@@ -616,7 +700,10 @@ function sceneReferenceNumbers(node) {
       numbers.push({ sceneNo: normalizeSceneNo(explicit[1]), sceneRef: `${normalizeSceneNo(explicit[1])}#${explicit[2]}`, role: '' });
       continue;
     }
-    const matches = [...value.matchAll(/(?:第\s*)?(\d+(?:[-.]\d+)?)\s*场/gu)];
+    const matches = [
+      ...value.matchAll(/(?:第\s*)?(\d+(?:[-.]\d+)?)\s*场/gu),
+      ...value.matchAll(/(?:第\s*)?场\s*(\d+(?:[-.]\d+)?)/gu)
+    ];
     if (matches.length) matches.forEach(match => numbers.push({ sceneNo: normalizeSceneNo(match[1]), sceneRef: '', role: '' }));
     else if (/^\d+(?:[-.]\d+)?$/u.test(value.trim())) numbers.push({ sceneNo: normalizeSceneNo(value), sceneRef: '', role: '' });
   }
