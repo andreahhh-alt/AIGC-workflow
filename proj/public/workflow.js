@@ -45,6 +45,7 @@ const state = {
   selectedKnowledge: new Set(),
   pendingFiles: [],
   activeUpload: null,
+  aiProviderChoice: localStorage.getItem('aigc-ai-provider') || 'auto',
   monitoredJobs: new Map(),
   jobPollTimer: null,
   jobPollBusy: false
@@ -212,6 +213,17 @@ function renderProjectSwitcher() {
     `<option value="${escapeHtml(project.id)}" ${project.id === state.projectId ? 'selected' : ''}>${escapeHtml(project.name)}</option>`
   ).join('');
   const ai = state.data.ai;
+  const providerSelect = $('#ai-provider-select');
+  const providerOptions = [
+    { id: 'auto', label: '自动推荐', configured: (ai.providers || []).some(item => item.configured) },
+    ...(ai.providers || [])
+  ];
+  if (!providerOptions.some(item => item.id === state.aiProviderChoice && item.configured)) {
+    state.aiProviderChoice = 'auto';
+  }
+  providerSelect.innerHTML = providerOptions.map(item =>
+    `<option value="${escapeHtml(item.id)}" ${item.id === state.aiProviderChoice ? 'selected' : ''} ${item.configured ? '' : 'disabled'}>${escapeHtml(item.label)}${item.configured ? '' : '（需配置Key）'}</option>`
+  ).join('');
   const status = $('#ai-status');
   const runningCount = state.data.jobs.filter(job => job.status === 'running').length;
   status.className = `system-pill ${runningCount ? 'working' : (ai.configured ? 'ready' : 'error')}`;
@@ -544,7 +556,7 @@ function renderReview() {
 function renderJobs(jobs) {
   return jobs.length ? jobs.map(job => `<div class="job-item ${escapeHtml(job.status)}">
     <i></i><div><strong>${escapeHtml(ACTION_NAMES[job.subtype] || job.name)}</strong>
-    <small>${escapeHtml((job.data?.targets || []).join(' · ') || job.data?.scope?.range || '项目范围')} · ${formatTime(job.updatedAt)}</small></div>
+    <small>${escapeHtml((job.data?.targets || []).join(' · ') || job.data?.scope?.range || '项目范围')} · ${escapeHtml(job.data?.scope?.aiProvider || '默认引擎')} · ${formatTime(job.updatedAt)}</small></div>
     ${statusTag(job.status)}
   </div>`).join('') : '<div class="empty-state">还没有AI任务。你可以从知识图谱、资产库或分镜工作台按需启动。</div>';
 }
@@ -588,19 +600,21 @@ async function runAI(action, targets, scope = {}, title = 'AI正在分析') {
     toast('请先在服务器环境变量中配置AI API Key。','error');
     return;
   }
-  const duplicate = state.data.jobs.find(job =>
-    job.status === 'running'
-    && job.subtype === action
-    && JSON.stringify(job.data?.targets || []) === JSON.stringify(targets)
-    && JSON.stringify(job.data?.scope || {}) === JSON.stringify(scope)
-  );
+  const duplicate = state.data.jobs.find(job => {
+    const { aiProvider, aiMode, ...jobScope } = job.data?.scope || {};
+    return job.status === 'running'
+      && job.subtype === action
+      && JSON.stringify(job.data?.targets || []) === JSON.stringify(targets)
+      && JSON.stringify(jobScope) === JSON.stringify(scope)
+      && (aiMode || 'auto') === state.aiProviderChoice;
+  });
   if (duplicate) {
     toast('相同的AI任务已经在后台生成，可在“审阅与版本”查看进度');
     return { job: duplicate };
   }
   try {
     const result = await api(`/api/projects/${encodeURIComponent(state.projectId)}/ai/jobs`, {
-      method:'POST', body:JSON.stringify({ action, targets, scope })
+      method:'POST', body:JSON.stringify({ action, targets, scope, provider: state.aiProviderChoice })
     });
     state.data.jobs.unshift(result.job);
     state.monitoredJobs.set(result.job.id, { action, status: 'running' });
@@ -683,6 +697,12 @@ function bindEvents() {
   $$('[data-go]').forEach(button => button.addEventListener('click',() => switchView(button.dataset.go)));
   $('#mobile-menu').addEventListener('click',() => $('#sidebar').classList.toggle('open'));
   $('#ai-status').addEventListener('click',() => switchView('review'));
+  $('#ai-provider-select').addEventListener('change',event => {
+    state.aiProviderChoice = event.target.value;
+    localStorage.setItem('aigc-ai-provider', state.aiProviderChoice);
+    const label = event.target.selectedOptions[0]?.textContent || state.aiProviderChoice;
+    toast(`后续AI任务将使用：${label}`);
+  });
   $('#project-select').addEventListener('change',event => {
     state.projectId = event.target.value;
     state.selectedSceneId = '';

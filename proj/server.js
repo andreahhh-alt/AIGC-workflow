@@ -8,8 +8,10 @@ const pdfParse = require('pdf-parse');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { AsyncLocalStorage } = require('async_hooks');
 
 const app = express();
+const aiRequestContext = new AsyncLocalStorage();
 app.disable('x-powered-by');
 // Render terminates HTTPS at a single reverse proxy. Trust exactly that hop so
 // rate limiting uses the real client IP instead of rejecting X-Forwarded-For.
@@ -306,7 +308,10 @@ async function seedSijizhidi() {
 
 // ---------- AI 服务 ----------
 function config() { return readJSON(CONFIG_FILE, {}); }
-function provider() { return process.env.AI_PROVIDER || config().provider || 'deepseek'; }
+function provider(requested) {
+  const selected = String(requested || process.env.AI_PROVIDER || config().provider || 'deepseek').trim();
+  return ['anthropic', 'deepseek', 'kimi', 'openai_compatible'].includes(selected) ? selected : 'deepseek';
+}
 function normalizeApiKey(value) {
   let normalized = String(value || '').trim();
   const quoted =
@@ -315,40 +320,52 @@ function normalizeApiKey(value) {
   if (quoted) normalized = normalized.slice(1, -1).trim();
   return normalized.replace(/^Bearer\s+/i, '').trim();
 }
-function apiKey() {
+function apiKey(selectedProvider = provider()) {
+  const selected = provider(selectedProvider);
   const envKeys = {
     anthropic: process.env.ANTHROPIC_API_KEY,
     deepseek: process.env.DEEPSEEK_API_KEY,
     kimi: process.env.MOONSHOT_API_KEY || process.env.KIMI_API_KEY,
     openai_compatible: process.env.AI_API_KEY
   };
-  return normalizeApiKey(envKeys[provider()] || config().apiKey);
+  const savedKey = selected === provider() ? config().apiKey : '';
+  return normalizeApiKey(envKeys[selected] || savedKey);
 }
-function model() {
+function model(selectedProvider = provider()) {
+  const selected = provider(selectedProvider);
   const defaults = {
     anthropic: 'claude-sonnet-4-5',
     deepseek: 'deepseek-v4-flash',
     kimi: 'kimi-k3',
     openai_compatible: ''
   };
-  return process.env.AI_MODEL || config().model || defaults[provider()] || '';
+  const envModels = {
+    anthropic: process.env.ANTHROPIC_MODEL,
+    deepseek: process.env.DEEPSEEK_MODEL,
+    kimi: process.env.KIMI_MODEL,
+    openai_compatible: process.env.AI_COMPATIBLE_MODEL
+  };
+  const defaultProviderModel = selected === provider() ? (process.env.AI_MODEL || config().model) : '';
+  return envModels[selected] || defaultProviderModel || defaults[selected] || '';
 }
-function aiBaseUrl() {
+function aiBaseUrl(selectedProvider = provider()) {
+  const selected = provider(selectedProvider);
   const urls = {
     deepseek: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
     kimi: process.env.KIMI_BASE_URL || 'https://api.moonshot.cn/v1',
     openai_compatible: process.env.AI_BASE_URL || ''
   };
-  return String(urls[provider()] || '').replace(/\/+$/, '');
+  return String(urls[selected] || '').replace(/\/+$/, '');
 }
-function keySource() {
+function keySource(selectedProvider = provider()) {
+  const selected = provider(selectedProvider);
   const envConfigured = {
     anthropic: process.env.ANTHROPIC_API_KEY,
     deepseek: process.env.DEEPSEEK_API_KEY,
     kimi: process.env.MOONSHOT_API_KEY || process.env.KIMI_API_KEY,
     openai_compatible: process.env.AI_API_KEY
   };
-  return envConfigured[provider()] ? 'env' : (config().apiKey ? 'saved' : 'none');
+  return envConfigured[selected] ? 'env' : (selected === provider() && config().apiKey ? 'saved' : 'none');
 }
 function isAdmin(req) {
   const expected = process.env.ADMIN_PASSWORD;
@@ -356,9 +373,11 @@ function isAdmin(req) {
 }
 
 async function callAI(system, user, options = {}) {
-  const key = apiKey();
+  const currentProvider = provider(options.provider || aiRequestContext.getStore()?.provider);
+  const currentModel = model(currentProvider);
+  const key = apiKey(currentProvider);
   if (!key) throw new Error('服务器尚未配置 AI API Key。');
-  if (provider() === 'anthropic') {
+  if (currentProvider === 'anthropic') {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -367,7 +386,7 @@ async function callAI(system, user, options = {}) {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: model(), max_tokens: 6000, system,
+        model: currentModel, max_tokens: 6000, system,
         messages: [{ role: 'user', content: user }]
       })
     });
@@ -377,11 +396,9 @@ async function callAI(system, user, options = {}) {
     if (!response.ok) throw new Error(data?.error?.message || `Anthropic HTTP ${response.status}`);
     return (data.content || []).filter(item => item.type === 'text').map(item => item.text).join('\n').trim();
   }
-  const baseUrl = aiBaseUrl();
+  const baseUrl = aiBaseUrl(currentProvider);
   if (!baseUrl) throw new Error('服务器尚未配置兼容接口的 AI_BASE_URL。');
-  if (!model()) throw new Error('服务器尚未配置 AI_MODEL。');
-  const currentProvider = provider();
-  const currentModel = model();
+  if (!currentModel) throw new Error('服务器尚未配置 AI_MODEL。');
   const requestBody = {
     model: currentModel,
     stream: false,
@@ -392,7 +409,9 @@ async function callAI(system, user, options = {}) {
     requestBody.reasoning_effort = 'max';
     if (options.json) requestBody.response_format = { type: 'json_object' };
   } else {
-    requestBody.max_tokens = 6000;
+    requestBody.max_tokens = options.json ? 12000 : 6000;
+    if (currentProvider === 'deepseek') requestBody.thinking = { type: 'disabled' };
+    if (options.json) requestBody.response_format = { type: 'json_object' };
   }
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
@@ -405,7 +424,7 @@ async function callAI(system, user, options = {}) {
   if (!response.ok) {
     const errorType = data?.error?.type ? ` ${data.error.type}` : '';
     const errorMessage = data?.error?.message || '请求失败';
-    throw new Error(`${provider()} HTTP ${response.status}${errorType}: ${errorMessage}`);
+    throw new Error(`${currentProvider} HTTP ${response.status}${errorType}: ${errorMessage}`);
   }
   return data?.choices?.[0]?.message?.content?.trim() || '';
 }
@@ -1036,6 +1055,10 @@ app.get('/api/workflow/bootstrap', async (req, res) => {
       jobs: byKind('job').slice(0, 80),
       ai: {
         configured: !!apiKey(), provider: provider(), model: model(),
+        providers: [
+          { id: 'kimi', label: 'Kimi K3 · 深度', model: model('kimi'), configured: !!apiKey('kimi') },
+          { id: 'deepseek', label: 'DeepSeek V4 Flash · 快速', model: model('deepseek'), configured: !!apiKey('deepseek') }
+        ],
         storage: pool ? 'postgres' : 'file'
       }
     });
@@ -1177,8 +1200,28 @@ app.delete('/api/records/:id', async (req, res) => {
   catch (error) { res.status(500).json({ error: String(error.message || error) }); }
 });
 
-async function executeAIJob(job, projectId, action, targets, scope) {
-  try {
+function selectJobProvider(requested, action, targets) {
+  const complexKnowledge = new Set([
+    'relationships', 'emotional_arc', 'narrative_structure',
+    'foreshadowing', 'character_arcs', 'logic_audit'
+  ]);
+  let selected = requested;
+  if (!['kimi', 'deepseek'].includes(selected)) {
+    selected = action === 'audit'
+      || (action === 'knowledge' && targets.some(target => complexKnowledge.has(target)))
+      ? 'kimi'
+      : 'deepseek';
+  }
+  if (!apiKey(selected)) {
+    const fallback = selected === 'kimi' ? 'deepseek' : 'kimi';
+    if (apiKey(fallback)) selected = fallback;
+  }
+  return selected;
+}
+
+async function executeAIJob(job, projectId, action, targets, scope, selectedProvider) {
+  return aiRequestContext.run({ provider: selectedProvider }, async () => {
+   try {
     const context = ['knowledge', 'assets', 'scenes'].includes(action) ? await sourceContext(projectId) : '';
     if (['knowledge', 'assets', 'scenes'].includes(action) && !context.trim()) {
       throw new Error('请先上传并解析剧本或项目资料。');
@@ -1193,7 +1236,8 @@ async function executeAIJob(job, projectId, action, targets, scope) {
   } catch (error) {
     await finishJob(job, 'failed', { error: String(error.message || error) });
     console.error(`AI job ${job.id} failed:`, error);
-  }
+   }
+  });
 }
 
 app.post('/api/projects/:projectId/ai/jobs', aiLimiter, async (req, res) => {
@@ -1201,6 +1245,7 @@ app.post('/api/projects/:projectId/ai/jobs', aiLimiter, async (req, res) => {
   const action = String(req.body?.action || '');
   const targets = Array.isArray(req.body?.targets) ? req.body.targets : [];
   const scope = req.body?.scope || {};
+  const requestedProvider = String(req.body?.provider || 'auto');
   if (!['knowledge', 'assets', 'scenes', 'prompt', 'audit'].includes(action)) {
     return res.status(400).json({ error: '不支持的AI任务。' });
   }
@@ -1208,10 +1253,15 @@ app.post('/api/projects/:projectId/ai/jobs', aiLimiter, async (req, res) => {
   try {
     const project = await Store.get(projectId);
     if (!project || project.kind !== 'project') return res.status(404).json({ error: '项目不存在。' });
-    const job = await saveJob(projectId, action, targets, scope);
+    const selectedProvider = selectJobProvider(requestedProvider, action, targets);
+    if (!apiKey(selectedProvider)) {
+      return res.status(400).json({ error: `${selectedProvider === 'deepseek' ? 'DeepSeek' : 'Kimi'} API Key 尚未配置。` });
+    }
+    const jobScope = { ...scope, aiProvider: selectedProvider, aiMode: requestedProvider };
+    const job = await saveJob(projectId, action, targets, jobScope);
     res.status(202).json({ job });
     setImmediate(() => {
-      void executeAIJob(job, projectId, action, targets, scope);
+      void executeAIJob(job, projectId, action, targets, jobScope, selectedProvider);
     });
   } catch (error) {
     res.status(500).json({ error: String(error.message || error) });

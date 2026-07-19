@@ -45,6 +45,7 @@ select,input,textarea{border:1px solid var(--line);background:var(--panel-3);col
 .project-switcher select{min-width:180px;padding:8px 32px 8px 10px}
 .icon-button,.mobile-menu{display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--line);background:var(--panel);cursor:pointer}
 .top-actions{margin-left:auto;display:flex;align-items:center;gap:10px}
+.ai-provider-select{max-width:190px;padding:7px 28px 7px 9px;font:10px var(--mono);cursor:pointer}
 .system-pill{display:flex;align-items:center;gap:7px;color:var(--muted);font:10px var(--mono);padding:7px 10px;border:1px solid var(--line);background:var(--panel-3);cursor:pointer}
 .system-pill i{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px var(--gold)}
 .system-pill.ready i{background:var(--green);box-shadow:0 0 8px var(--green)}
