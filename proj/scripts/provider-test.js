@@ -17,13 +17,24 @@ global.fetch = async (url, options) => {
   };
 };
 
-const { provider, apiKey, model, aiBaseUrl, callAI } = require('../server');
+const {
+  provider,
+  apiKey,
+  model,
+  aiBaseUrl,
+  callAI,
+  WORKFLOW_SCHEMA_MIGRATIONS
+} = require('../server');
 
 (async () => {
   assert.equal(provider(), 'kimi');
   assert.equal(apiKey(), 'test-moonshot-key');
   assert.equal(model(), 'kimi-k3');
   assert.equal(aiBaseUrl(), 'https://api.moonshot.cn/v1');
+  assert(
+    WORKFLOW_SCHEMA_MIGRATIONS.some(sql => /sort_order TYPE bigint/i.test(sql)),
+    'Postgres sort_order 必须迁移为 bigint，才能保存毫秒时间戳'
+  );
 
   const result = await callAI('系统指令', '用户请求');
   assert.equal(result, '{"ok":true}');
@@ -39,7 +50,8 @@ const { provider, apiKey, model, aiBaseUrl, callAI } = require('../server');
     ok: true,
     provider: provider(),
     model: model(),
-    endpoint: captured.url
+    endpoint: captured.url,
+    postgresSortOrder: 'bigint'
   }));
 })().catch(error => {
   console.error(error);

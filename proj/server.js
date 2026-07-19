@@ -176,7 +176,7 @@ function mapRow(row, includeBlob = false) {
     status: row.status,
     data: row.data || {},
     textContent: row.text_content,
-    order: row.sort_order,
+    order: Number(row.sort_order),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at)
   };
@@ -191,6 +191,10 @@ const Store = {
   remove: (...args) => (pool ? PgStore : LocalStore).remove(...args)
 };
 
+const WORKFLOW_SCHEMA_MIGRATIONS = [
+  'ALTER TABLE workflow_records ALTER COLUMN sort_order TYPE bigint USING sort_order::bigint'
+];
+
 async function initStore() {
   if (pool) {
     await pool.query(`CREATE TABLE IF NOT EXISTS workflow_records(
@@ -203,10 +207,13 @@ async function initStore() {
       data jsonb NOT NULL DEFAULT '{}'::jsonb,
       text_content text,
       blob bytea,
-      sort_order integer NOT NULL DEFAULT 0,
+      sort_order bigint NOT NULL DEFAULT 0,
       created_at bigint NOT NULL,
       updated_at bigint NOT NULL
     )`);
+    for (const migration of WORKFLOW_SCHEMA_MIGRATIONS) {
+      await pool.query(migration);
+    }
     await pool.query('CREATE INDEX IF NOT EXISTS workflow_project_kind_idx ON workflow_records(project_id,kind)');
     await pool.query(`CREATE TABLE IF NOT EXISTS feedback(
       id text PRIMARY KEY, pid text NOT NULL, txt text NOT NULL,
@@ -1321,5 +1328,6 @@ module.exports = {
   apiKey,
   model,
   aiBaseUrl,
-  callAI
+  callAI,
+  WORKFLOW_SCHEMA_MIGRATIONS
 };
