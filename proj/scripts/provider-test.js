@@ -2,7 +2,7 @@ const assert = require('assert');
 
 process.env.AI_PROVIDER = 'kimi';
 process.env.AI_MODEL = 'kimi-k3';
-process.env.MOONSHOT_API_KEY = 'test-moonshot-key';
+process.env.MOONSHOT_API_KEY = '  "Bearer test-moonshot-key"  ';
 process.env.KIMI_BASE_URL = 'https://api.moonshot.cn/v1/';
 
 let captured;
