@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1017">
+  <meta name="description" content="从剧本资料到资产、15秒分镜、提示词与审阅反馈的AIGC影视工作流。">
+  <title>AIGC 影视工作流 · 四季之地</title>
+  <link rel="stylesheet" href="/workflow.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <button class="mobile-menu" id="mobile-menu" aria-label="打开导航">☰</button>
+      <a class="brand" href="/" aria-label="AIGC影视工作流首页">
+        <span class="brand-mark">帧</span>
+        <span>
+          <strong>AIGC 影视工作流</strong>
+          <small>PROJECT INTELLIGENCE · v2.0</small>
+        </span>
+      </a>
+      <div class="project-switcher">
+        <span class="eyebrow">当前项目</span>
+        <select id="project-select" aria-label="选择项目"></select>
+        <button class="icon-button" id="new-project-button" title="创建项目">＋</button>
+      </div>
+      <div class="top-actions">
+        <span class="system-pill" id="ai-status"><i></i> 正在连接</span>
+        <a class="ghost-button" href="/legacy">场7–12旧版</a>
+        <button class="primary-button compact" id="global-upload">上传资料</button>
+      </div>
+    </header>
+
+    <aside class="sidebar" id="sidebar">
+      <nav aria-label="主导航">
+        <p class="nav-label">项目</p>
+        <button class="nav-item active" data-view="overview"><span>01</span>项目总览</button>
+        <button class="nav-item" data-view="sources"><span>02</span>资料与解析 <b id="nav-files">0</b></button>
+        <button class="nav-item" data-view="knowledge"><span>03</span>知识图谱 <b id="nav-analyses">0</b></button>
+        <p class="nav-label">制作</p>
+        <button class="nav-item" data-view="assets"><span>04</span>资产库 <b id="nav-assets">0</b></button>
+        <button class="nav-item" data-view="storyboard"><span>05</span>场次与分镜 <b id="nav-groups">0</b></button>
+        <button class="nav-item" data-view="review"><span>06</span>AI任务与审阅</button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="storage-meter">
+          <div><span>工作流原则</span><b>人机协作</b></div>
+          <p>AI生成候选稿，人确认后锁定。上游变化只标记影响，不覆盖创作。</p>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <section class="view active" id="view-overview">
+        <div class="hero">
+          <div>
+            <span class="kicker">FILM PRODUCTION SYSTEM</span>
+            <h1 id="project-title">四季之地</h1>
+            <p id="project-logline">正在加载项目资料…</p>
+          </div>
+          <div class="hero-actions">
+            <button class="secondary-button" data-go="knowledge">选择AI分析</button>
+            <button class="primary-button" data-go="storyboard">进入分镜工作台</button>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <article class="stat-card"><span>项目资料</span><strong id="stat-files">0</strong><small>已上传文件</small></article>
+          <article class="stat-card"><span>知识分析</span><strong id="stat-analysis">0</strong><small>已生成视图</small></article>
+          <article class="stat-card"><span>生产资产</span><strong id="stat-assets">0</strong><small>角色·场景·道具等</small></article>
+          <article class="stat-card accent"><span>15s分镜</span><strong id="stat-groups">0</strong><small>生成单位</small></article>
+        </div>
+
+        <div class="two-column">
+          <article class="panel production-map">
+            <div class="panel-head">
+              <div><span class="kicker">PIPELINE</span><h2>生产闭环</h2></div>
+              <span class="small-note">每一步都可单独调用AI</span>
+            </div>
+            <div class="pipeline">
+              <button data-go="sources"><em>01</em><strong>资料解析</strong><small>剧本·人物·图片</small></button>
+              <i>→</i>
+              <button data-go="knowledge"><em>02</em><strong>结构理解</strong><small>时间线·关系·世界观</small></button>
+              <i>→</i>
+              <button data-go="assets"><em>03</em><strong>资产锁定</strong><small>角色·场景·风格</small></button>
+              <i>→</i>
+              <button data-go="storyboard"><em>04</em><strong>15s分镜</strong><small>节拍·提示词·色卡</small></button>
+              <i>→</i>
+              <button data-go="review"><em>05</em><strong>生成审阅</strong><small>反馈·修复·锁定</small></button>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div><span class="kicker">STYLE LOCK</span><h2>项目视觉基准</h2></div>
+              <span class="status approved">已锁定</span>
+            </div>
+            <dl class="style-lock" id="style-lock"></dl>
+          </article>
+        </div>
+
+        <article class="panel recent-panel">
+          <div class="panel-head">
+            <div><span class="kicker">RECENT ACTIVITY</span><h2>最近AI任务</h2></div>
+            <button class="text-button" data-go="review">查看全部 →</button>
+          </div>
+          <div class="job-list" id="recent-jobs"></div>
+        </article>
+      </section>
+
+      <section class="view" id="view-sources">
+        <div class="page-head">
+          <div><span class="kicker">SOURCE OF TRUTH</span><h1>资料与解析</h1><p>基础文本自动提取；人物、结构和创作判断由你选择何时交给AI。</p></div>
+          <button class="primary-button upload-trigger">上传资料</button>
+        </div>
+        <div class="source-layout">
+          <article class="upload-zone" id="drop-zone" tabindex="0" role="button" aria-label="上传项目资料">
+            <div class="upload-symbol">＋</div>
+            <h2>拖入剧本、人物小传或参考资料</h2>
+            <p>支持 DOCX、PDF、TXT、Markdown、图片；单文件不超过15MB</p>
+            <button class="secondary-button upload-trigger">选择文件</button>
+          </article>
+          <article class="panel source-guidance">
+            <span class="kicker">解析策略</span>
+            <h2>先提取事实，再做创作分析</h2>
+            <ul>
+              <li><i>1</i><span><b>自动</b>提取文本、文件类型和版本信息</span></li>
+              <li><i>2</i><span><b>人工</b>确认哪份资料是当前权威版本</span></li>
+              <li><i>3</i><span><b>按需</b>选择知识图谱、资产或分镜AI任务</span></li>
+            </ul>
+          </article>
+        </div>
+        <article class="panel">
+          <div class="panel-head">
+            <div><span class="kicker">FILES</span><h2>项目资料</h2></div>
+            <div class="filter-row" id="file-filters">
+              <button class="chip active" data-filter="all">全部</button>
+              <button class="chip" data-filter="script">剧本</button>
+              <button class="chip" data-filter="character_bio">人物</button>
+              <button class="chip" data-filter="worldbuilding">世界观</button>
+              <button class="chip" data-filter="image">图片</button>
+            </div>
+          </div>
+          <div class="file-list" id="file-list"></div>
+        </article>
+      </section>
+
+      <section class="view" id="view-knowledge">
+        <div class="page-head">
+          <div><span class="kicker">PROJECT GRAPH</span><h1>知识图谱</h1><p>选择单项、多项或全部生成。所有视图共享同一套人物、事件、时间和场次事实。</p></div>
+          <div class="page-actions">
+            <button class="secondary-button" id="select-all-knowledge">全选</button>
+            <button class="primary-button" id="generate-knowledge">生成选中项 <span id="knowledge-count">0</span></button>
+          </div>
+        </div>
+        <div class="selection-summary">
+          <div><strong>按需AI分析</strong><span>生成结果先进入“AI草稿”，确认后才能锁定为项目事实。</span></div>
+          <div><i></i> 不会覆盖人工版本</div>
+          <div><i></i> 支持单项重新生成</div>
+          <div><i></i> 可回溯资料来源</div>
+        </div>
+        <div class="knowledge-grid" id="knowledge-grid"></div>
+      </section>
+
+      <section class="view" id="view-assets">
+        <div class="page-head">
+          <div><span class="kicker">PRODUCTION ASSETS</span><h1>资产库</h1><p>被锁定的视觉与声音锚点会自动注入后续分镜，减少角色和场景漂移。</p></div>
+          <div class="page-actions">
+            <button class="secondary-button" id="extract-assets">AI提取资产</button>
+            <button class="primary-button" id="new-asset">＋ 新建资产</button>
+          </div>
+        </div>
+        <div class="asset-tabs" id="asset-tabs"></div>
+        <div class="asset-grid" id="asset-grid"></div>
+      </section>
+
+      <section class="view" id="view-storyboard">
+        <div class="page-head">
+          <div><span class="kicker">15 SECOND UNITS</span><h1>场次与分镜工作台</h1><p>场次 → 15秒分镜组 → 2–4秒单一动作节拍。先确认拆分，再按字段生成提示词。</p></div>
+          <div class="page-actions">
+            <button class="secondary-button" id="ai-split-scenes">AI拆分场次</button>
+            <button class="primary-button" id="audit-storyboard">AI检查连续性</button>
+          </div>
+        </div>
+        <div class="storyboard-layout">
+          <aside class="scene-list" id="scene-list"></aside>
+          <div class="shot-workspace">
+            <div class="scene-detail" id="scene-detail"></div>
+            <div class="shot-list" id="shot-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-review">
+        <div class="page-head">
+          <div><span class="kicker">HUMAN IN THE LOOP</span><h1>AI任务与审阅</h1><p>查看生成、失败、确认和过期状态。AI不会自动把草稿变成正式版本。</p></div>
+          <button class="secondary-button" id="refresh-button">刷新状态</button>
+        </div>
+        <div class="review-grid">
+          <article class="panel">
+            <div class="panel-head"><div><span class="kicker">QUEUE</span><h2>任务记录</h2></div></div>
+            <div class="job-list large" id="job-list"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><div><span class="kicker">CHECKPOINTS</span><h2>必须人工确认</h2></div></div>
+            <div class="checkpoint-list" id="checkpoint-list"></div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <input id="file-input" type="file" multiple accept=".docx,.pdf,.txt,.md,.json,.csv,.srt,image/*" hidden>
+
+  <dialog id="project-dialog">
+    <form method="dialog" id="project-form">
+      <div class="dialog-head"><div><span class="kicker">NEW PROJECT</span><h2>创建影视项目</h2></div><button value="cancel" aria-label="关闭">×</button></div>
+      <label>项目名称<input name="name" required placeholder="例如：四季之地"></label>
+      <label>一句话梗概<textarea name="logline" rows="3" placeholder="主角、目标、阻力与核心变化"></textarea></label>
+      <label>剧本版本<input name="scriptVersion" placeholder="例如：v1.0 / 2026-07-19"></label>
+      <div class="dialog-actions"><button value="cancel" class="ghost-button">取消</button><button value="submit" class="primary-button">创建项目</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="upload-dialog">
+    <form method="dialog" id="upload-form">
+      <div class="dialog-head"><div><span class="kicker">UPLOAD SOURCES</span><h2>上传项目资料</h2></div><button value="cancel" aria-label="关闭">×</button></div>
+      <label>资料类型
+        <select name="kind">
+          <option value="auto">自动识别</option>
+          <option value="script">剧本</option>
+          <option value="character_bio">人物小传</option>
+          <option value="worldbuilding">世界观设定</option>
+          <option value="reference">视觉/声音参考</option>
+          <option value="image">图片资产</option>
+        </select>
+      </label>
+      <div class="dialog-drop" id="dialog-drop">
+        <strong id="upload-selection">尚未选择文件</strong>
+        <span>DOCX · PDF · TXT · MD · IMAGE</span>
+        <button type="button" class="secondary-button" id="dialog-file-picker">选择文件</button>
+      </div>
+      <p class="dialog-note">上传后只进行确定性文本提取。知识分析、资产提取和分镜拆分由你后续选择。</p>
+      <div class="dialog-actions"><button value="cancel" class="ghost-button">取消</button><button value="submit" class="primary-button">上传并解析</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="asset-dialog">
+    <form method="dialog" id="asset-form">
+      <div class="dialog-head"><div><span class="kicker">ASSET EXTRACTION</span><h2>选择AI提取类别</h2></div><button value="cancel" aria-label="关闭">×</button></div>
+      <div class="check-grid" id="asset-checks"></div>
+      <div class="dialog-actions"><button value="cancel" class="ghost-button">取消</button><button value="submit" class="primary-button">生成选中资产</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="prompt-dialog" class="wide-dialog">
+    <form method="dialog" id="prompt-form">
+      <div class="dialog-head"><div><span class="kicker">PROMPT WORKBENCH</span><h2 id="prompt-title">生成分镜提示词</h2></div><button value="cancel" aria-label="关闭">×</button></div>
+      <input type="hidden" name="shotGroupId">
+      <div class="prompt-options">
+        <label>目标模型<select name="targetModel"><option>通用</option><option>Kling</option><option>即梦 Seedance</option><option>海螺 Hailuo</option><option>通义万相</option><option>Runway Gen-4</option><option>Pika</option></select></label>
+        <label>生成模式<select name="mode"><option value="T2V">T2V · 文生视频</option><option value="I2V">I2V · 图生视频</option></select></label>
+      </div>
+      <fieldset>
+        <legend>选择本次由AI生成的字段</legend>
+        <div class="check-grid" id="prompt-field-checks">
+          <label><input type="checkbox" name="fields" value="prompt" checked><span><b>双语提示词</b><small>完整D类提示词</small></span></label>
+          <label><input type="checkbox" name="fields" value="colorCard" checked><span><b>色卡</b><small>场次色彩与用途</small></span></label>
+          <label><input type="checkbox" name="fields" value="camera"><span><b>机位与焦段</b><small>位置、高度、角度、景别</small></span></label>
+          <label><input type="checkbox" name="fields" value="beats"><span><b>动作节拍</b><small>2–4秒单核心动作</small></span></label>
+          <label><input type="checkbox" name="fields" value="dialogue"><span><b>台词表演</b><small>触发、语气、肢体、停顿</small></span></label>
+          <label><input type="checkbox" name="fields" value="continuity"><span><b>衔接与限制</b><small>关键帧、限制、末帧</small></span></label>
+        </div>
+      </fieldset>
+      <p class="dialog-note">重新生成只更新你勾选的字段，其余人工内容和已锁定字段保持不变。</p>
+      <div class="dialog-actions"><button value="cancel" class="ghost-button">取消</button><button value="submit" class="primary-button">AI生成选中字段</button></div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="loading-overlay" id="loading-overlay" aria-hidden="true">
+    <div class="loader"><i></i><strong id="loading-title">AI正在分析</strong><span>结果会先保存为草稿</span></div>
+  </div>
+
+  <script src="/workflow.js" defer></script>
+</body>
+</html>
