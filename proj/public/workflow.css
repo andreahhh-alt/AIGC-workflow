@@ -45,10 +45,13 @@ select,input,textarea{border:1px solid var(--line);background:var(--panel-3);col
 .project-switcher select{min-width:180px;padding:8px 32px 8px 10px}
 .icon-button,.mobile-menu{display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--line);background:var(--panel);cursor:pointer}
 .top-actions{margin-left:auto;display:flex;align-items:center;gap:10px}
-.system-pill{display:flex;align-items:center;gap:7px;color:var(--muted);font:10px var(--mono);padding:7px 10px;border:1px solid var(--line);background:var(--panel-3)}
+.system-pill{display:flex;align-items:center;gap:7px;color:var(--muted);font:10px var(--mono);padding:7px 10px;border:1px solid var(--line);background:var(--panel-3);cursor:pointer}
 .system-pill i{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px var(--gold)}
 .system-pill.ready i{background:var(--green);box-shadow:0 0 8px var(--green)}
 .system-pill.error i{background:var(--red);box-shadow:0 0 8px var(--red)}
+.system-pill.working{color:var(--cyan);border-color:rgba(101,201,210,.45)}
+.system-pill.working i{background:var(--cyan);box-shadow:0 0 10px var(--cyan);animation:task-pulse 1.2s ease-in-out infinite}
+@keyframes task-pulse{50%{opacity:.35;transform:scale(.75)}}
 .primary-button,.secondary-button,.ghost-button,.text-button{border:1px solid transparent;cursor:pointer;transition:.16s ease;white-space:nowrap}
 .primary-button{background:var(--cyan);border-color:var(--cyan);color:#081116;padding:10px 16px;font-weight:650}
 .primary-button:hover{background:#7bd4d9;transform:translateY(-1px)}

@@ -1177,18 +1177,8 @@ app.delete('/api/records/:id', async (req, res) => {
   catch (error) { res.status(500).json({ error: String(error.message || error) }); }
 });
 
-app.post('/api/projects/:projectId/ai/jobs', aiLimiter, async (req, res) => {
-  const projectId = req.params.projectId;
-  const action = String(req.body?.action || '');
-  const targets = Array.isArray(req.body?.targets) ? req.body.targets : [];
-  const scope = req.body?.scope || {};
-  if (!['knowledge', 'assets', 'scenes', 'prompt', 'audit'].includes(action)) {
-    return res.status(400).json({ error: '不支持的AI任务。' });
-  }
-  if (!targets.length && action !== 'scenes') return res.status(400).json({ error: '请选择至少一个生成目标。' });
-  let job;
+async function executeAIJob(job, projectId, action, targets, scope) {
   try {
-    job = await saveJob(projectId, action, targets, scope);
     const context = ['knowledge', 'assets', 'scenes'].includes(action) ? await sourceContext(projectId) : '';
     if (['knowledge', 'assets', 'scenes'].includes(action) && !context.trim()) {
       throw new Error('请先上传并解析剧本或项目资料。');
@@ -1200,10 +1190,31 @@ app.post('/api/projects/:projectId/ai/jobs', aiLimiter, async (req, res) => {
     if (action === 'prompt') result = await runPromptJob(projectId, targets, scope);
     if (action === 'audit') result = await runAuditJob(projectId, targets);
     await finishJob(job, 'completed', { result });
-    res.json({ job, result });
   } catch (error) {
-    if (job) await finishJob(job, 'failed', { error: String(error.message || error) });
-    res.status(500).json({ error: String(error.message || error), jobId: job?.id });
+    await finishJob(job, 'failed', { error: String(error.message || error) });
+    console.error(`AI job ${job.id} failed:`, error);
+  }
+}
+
+app.post('/api/projects/:projectId/ai/jobs', aiLimiter, async (req, res) => {
+  const projectId = req.params.projectId;
+  const action = String(req.body?.action || '');
+  const targets = Array.isArray(req.body?.targets) ? req.body.targets : [];
+  const scope = req.body?.scope || {};
+  if (!['knowledge', 'assets', 'scenes', 'prompt', 'audit'].includes(action)) {
+    return res.status(400).json({ error: '不支持的AI任务。' });
+  }
+  if (!targets.length && action !== 'scenes') return res.status(400).json({ error: '请选择至少一个生成目标。' });
+  try {
+    const project = await Store.get(projectId);
+    if (!project || project.kind !== 'project') return res.status(404).json({ error: '项目不存在。' });
+    const job = await saveJob(projectId, action, targets, scope);
+    res.status(202).json({ job });
+    setImmediate(() => {
+      void executeAIJob(job, projectId, action, targets, scope);
+    });
+  } catch (error) {
+    res.status(500).json({ error: String(error.message || error) });
   }
 });
 
