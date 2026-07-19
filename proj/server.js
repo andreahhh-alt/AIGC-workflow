@@ -372,13 +372,23 @@ async function callAI(system, user) {
   const baseUrl = aiBaseUrl();
   if (!baseUrl) throw new Error('服务器尚未配置兼容接口的 AI_BASE_URL。');
   if (!model()) throw new Error('服务器尚未配置 AI_MODEL。');
+  const currentProvider = provider();
+  const currentModel = model();
+  const requestBody = {
+    model: currentModel,
+    stream: false,
+    messages: [{ role: 'system', content: system }, { role: 'user', content: user }]
+  };
+  if (currentProvider === 'kimi' && currentModel === 'kimi-k3') {
+    requestBody.max_completion_tokens = 6000;
+    requestBody.reasoning_effort = 'max';
+  } else {
+    requestBody.max_tokens = 6000;
+  }
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model: model(), max_tokens: 6000, stream: false,
-      messages: [{ role: 'system', content: system }, { role: 'user', content: user }]
-    })
+    body: JSON.stringify(requestBody)
   });
   const raw = await response.text();
   let data = {};
