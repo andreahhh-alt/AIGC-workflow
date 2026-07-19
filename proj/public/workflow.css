@@ -286,6 +286,7 @@ legend{padding:0 7px;color:var(--muted);font-size:11px}
 .loader{display:flex;min-width:280px;flex-direction:column;align-items:center;padding:28px;border:1px solid var(--line);background:var(--panel)}
 .loader i{width:34px;height:34px;margin-bottom:15px;border:2px solid var(--line);border-top-color:var(--cyan);border-radius:50%;animation:spin .8s linear infinite}
 .loader span{color:var(--faint);font-size:10px;margin-top:4px}
+.loader .upload-cancel{margin-top:16px;padding:7px 13px;font-size:10px}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:1180px){
   .topbar{gap:14px}.project-switcher .eyebrow{display:none}.system-pill{display:none}

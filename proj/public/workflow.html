@@ -300,7 +300,9 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <div class="loading-overlay" id="loading-overlay" aria-hidden="true">
-    <div class="loader"><i></i><strong id="loading-title">AI正在分析</strong><span>结果会先保存为草稿</span></div>
+    <div class="loader"><i></i><strong id="loading-title">AI正在分析</strong><span id="loading-detail">结果会先保存为草稿</span>
+      <button class="secondary-button upload-cancel" id="cancel-upload" type="button" hidden>取消上传</button>
+    </div>
   </div>
 
   <script src="/workflow.js" defer></script>

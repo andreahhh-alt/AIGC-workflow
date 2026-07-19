@@ -11,6 +11,11 @@ const crypto = require('crypto');
 
 const app = express();
 app.disable('x-powered-by');
+// Render terminates HTTPS at a single reverse proxy. Trust exactly that hop so
+// rate limiting uses the real client IP instead of rejecting X-Forwarded-For.
+if (process.env.RENDER || process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
 app.use(express.json({ limit: '2mb' }));
 
 const corsOrigin = process.env.CORS_ORIGIN;
@@ -40,6 +45,18 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024, files: 12 }
 });
+const uploadFilesMiddleware = (req, res, next) => {
+  upload.array('files', 12)(req, res, error => {
+    if (!error) return next();
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: '单个文件不能超过 15MB。' });
+    }
+    if (error.code === 'LIMIT_FILE_COUNT' || error.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({ error: '一次最多上传 12 个文件。' });
+    }
+    return res.status(400).json({ error: `文件上传失败：${error.message || error}` });
+  });
+};
 
 const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -921,6 +938,16 @@ async function extractText(file) {
   return '';
 }
 
+function withTimeout(promise, timeoutMs, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    })
+  ]).finally(() => clearTimeout(timer));
+}
+
 function classifyFile(filename, mime, requested) {
   if (requested && requested !== 'auto') return requested;
   const name = filename.toLowerCase();
@@ -977,13 +1004,17 @@ app.post('/api/projects', async (req, res) => {
   catch (error) { res.status(500).json({ error: String(error.message || error) }); }
 });
 
-app.post('/api/projects/:projectId/files', uploadLimiter, upload.array('files', 12), async (req, res) => {
+app.post('/api/projects/:projectId/files', uploadLimiter, uploadFilesMiddleware, async (req, res) => {
   try {
     const project = await Store.get(req.params.projectId);
     if (!project) return res.status(404).json({ error: '项目不存在。' });
     const saved = [];
     for (const file of req.files || []) {
-      const text = await extractText(file);
+      const text = await withTimeout(
+        extractText(file),
+        45 * 1000,
+        `${file.originalname} 解析超过 45 秒，请检查文件是否损坏或先转换为 DOCX/TXT。`
+      );
       const record = {
         id: uid('file'), projectId: req.params.projectId, kind: 'file',
         subtype: classifyFile(file.originalname, file.mimetype, req.body?.kind),
