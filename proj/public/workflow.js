@@ -48,7 +48,8 @@ const state = {
   aiProviderChoice: localStorage.getItem('aigc-ai-provider') || 'auto',
   monitoredJobs: new Map(),
   jobPollTimer: null,
-  jobPollBusy: false
+  jobPollBusy: false,
+  storyMapScroll: Object.create(null)
 };
 
 const $ = selector => document.querySelector(selector);
@@ -141,7 +142,14 @@ async function pollAIJobs() {
     }
     state.data = latest;
     syncRunningJobs();
-    refreshAfterJobUpdate();
+    if (completed.length) {
+      refreshAfterJobUpdate();
+    } else {
+      renderProjectSwitcher();
+      renderNavigationCounts();
+      renderOverview();
+      renderReview();
+    }
     for (const job of completed) {
       if (job.status === 'completed') {
         toast(`${ACTION_NAMES[job.subtype] || job.name}已完成，结果保存为AI草稿`);
@@ -294,6 +302,30 @@ function renderKnowledge() {
   renderKnowledgeDetail();
 }
 
+function inferStoryLane(node, analysisType, index) {
+  const explicit = String(node.lane || '').trim();
+  if (explicit) return explicit;
+  const text = `${node.label || ''} ${node.description || ''} ${node.eventType || ''}`;
+  if (/情感|关系|爱情|信物|母亲|父亲|家人|承诺|回信|relationship|romance/i.test(text)) return '关系与信物';
+  if (/制度|世界|规则|社会|组织|技术|季节|休眠|刑|world|system/i.test(text)) return '制度与外部压力';
+  if (/伏笔|揭示|秘密|线索|回收|reveal|payoff|mystery/i.test(text)) return '信息与回收';
+  if (analysisType === 'emotional_arc') return index % 3 === 1 ? '关系事件' : '情感状态';
+  return '核心行动线';
+}
+
+function storyNodeDetails(node) {
+  const fields = [
+    ['目标', node.goal],
+    ['行动', node.action],
+    ['阻力', node.obstacle],
+    ['选择', node.choice],
+    ['代价', node.cost]
+  ].filter(([,value]) => value);
+  return fields.length
+    ? `<dl>${fields.map(([label,value]) => `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>`
+    : `<p>${escapeHtml(node.description || '')}</p>`;
+}
+
 function renderKnowledgeDetail() {
   const analyses = state.data.analyses.filter(item => item.subtype !== 'quality_audit');
   if (!state.selectedAnalysisType || !analyses.some(item => item.subtype === state.selectedAnalysisType)) {
@@ -306,28 +338,67 @@ function renderKnowledgeDetail() {
   }
   const nodes = Array.isArray(analysis.data?.nodes) ? analysis.data.nodes : [];
   const edges = Array.isArray(analysis.data?.edges) ? analysis.data.edges : [];
-  $('#knowledge-detail').innerHTML = `
+  const detail = $('#knowledge-detail');
+  const previousCanvas = detail.querySelector('.story-map-canvas');
+  if (previousCanvas) state.storyMapScroll[analysis.subtype] = previousCanvas.scrollLeft;
+  const preparedNodes = nodes.map((node,index) => ({
+    node,
+    index,
+    lane: inferStoryLane(node, analysis.subtype, index)
+  }));
+  const lanes = [...new Set(preparedNodes.map(item => item.lane))].slice(0,4);
+  const normalizedNodes = preparedNodes.map(item => ({
+    ...item,
+    lane: lanes.includes(item.lane) ? item.lane : lanes[0] || '核心行动线'
+  }));
+  const outgoing = edges.reduce((map, edge) => {
+    const labels = map.get(edge.from) || [];
+    if (edge.label) labels.push(edge.label);
+    map.set(edge.from, labels);
+    return map;
+  }, new Map());
+  detail.innerHTML = `
     <div class="panel-head graph-head">
       <div><span class="kicker">LINKED GRAPH</span><h2>${escapeHtml(analysis.name)}</h2><p>${escapeHtml(analysis.data?.summary || '')}</p></div>
       <div class="graph-switcher">${analyses.map(item => `<button class="chip ${item.subtype === analysis.subtype ? 'active' : ''}" data-open-analysis="${item.subtype}">${escapeHtml(item.name)}</button>`).join('')}</div>
     </div>
     <div class="graph-stats"><span>${nodes.length} 个节点</span><span>${edges.length} 条关系</span><span>${analysis.data?.linkedSceneCount || 0} 个已链接场次</span></div>
-    <div class="story-map-canvas">
+    <div class="story-map-canvas" data-story-map="${escapeHtml(analysis.subtype)}">
       <div class="map-grid-lines"></div>
-      <div class="story-lane-label"><span>${escapeHtml(analysis.name)}</span><small>按剧本顺序展开 · 横向滚动</small></div>
-      <div class="graph-node-list">${nodes.length ? nodes.map((node,index) => {
-      const refs = Array.isArray(node.sceneRefs) ? node.sceneRefs : [];
-      return `<article class="graph-node">
-        <span class="node-index">${String(index + 1).padStart(2,'0')}</span>
-        <div><h3>${escapeHtml(node.label || node.id || '未命名节点')}</h3><p>${escapeHtml(node.description || '')}</p>
-          <div class="scene-ref-list">${refs.length ? refs.map(ref => ref.sceneId
-            ? `<button data-scene-link="${escapeHtml(ref.sceneId)}">场${escapeHtml(ref.heading ? `${ref.sceneNo} · ${ref.heading}` : ref.sceneNo)}${ref.role ? ` · ${escapeHtml(ref.role)}` : ''} →</button>`
-            : `<span class="scene-ref unresolved">场${escapeHtml(ref.sceneNo)} · ${ref.ambiguous ? '编号冲突待确认' : '尚未建立分镜'}</span>`
-          ).join('') : '<span class="scene-ref unresolved">未关联场次</span>'}</div>
-        </div>
-      </article>`;
-    }).join('') : '<div class="empty-state">这一分析还没有结构化节点，可点击“重新生成”升级为可导航图谱。</div>'}</div>
+      <div class="story-map-heading"><div><span>${escapeHtml(analysis.name)}</span><small>多轨叙事结构 · 按时间/场次横向展开</small></div>
+        <div class="story-map-legend">${lanes.map((lane,index) => `<i class="lane-${index}"></i><span>${escapeHtml(lane)}</span>`).join('')}</div>
+      </div>
+      ${nodes.length ? `<div class="story-map-stage" style="--story-columns:${nodes.length}">
+        <div class="story-time-ruler"><b>时间 / 场次</b><div>${normalizedNodes.map(({node,index}) =>
+          `<span style="grid-column:${index + 1}">${escapeHtml(node.timeLabel || node.sceneRefs?.[0]?.sceneNo ? (node.timeLabel || `场${node.sceneRefs?.[0]?.sceneNo}`) : `节点 ${index + 1}`)}</span>`
+        ).join('')}</div></div>
+        ${lanes.map((lane,laneIndex) => `<section class="story-track lane-${laneIndex}">
+          <header><span>TRACK ${String(laneIndex + 1).padStart(2,'0')}</span><strong>${escapeHtml(lane)}</strong></header>
+          <div class="story-track-events">${normalizedNodes.filter(item => item.lane === lane).map(({node,index}) => {
+            const refs = Array.isArray(node.sceneRefs) ? node.sceneRefs : [];
+            const edgeLabels = outgoing.get(node.id) || [];
+            return `<article class="story-event importance-${escapeHtml(node.importance || 'normal')}" style="grid-column:${index + 1}">
+              <div class="story-event-marker"><i></i><span>${String(index + 1).padStart(2,'0')}</span></div>
+              <small>${escapeHtml(node.eventType || 'event')}</small>
+              <h3>${escapeHtml(node.label || node.id || '未命名节点')}</h3>
+              ${storyNodeDetails(node)}
+              ${edgeLabels.length ? `<div class="edge-labels">${edgeLabels.slice(0,2).map(label => `<em>${escapeHtml(label)} →</em>`).join('')}</div>` : ''}
+              <div class="scene-ref-list">${refs.length ? refs.map(ref => ref.sceneId
+                ? `<button data-scene-link="${escapeHtml(ref.sceneId)}">场${escapeHtml(ref.heading ? `${ref.sceneNo} · ${ref.heading}` : ref.sceneNo)}${ref.role ? ` · ${escapeHtml(ref.role)}` : ''} →</button>`
+                : `<span class="scene-ref unresolved">场${escapeHtml(ref.sceneNo)} · ${ref.ambiguous ? '编号冲突待确认' : '尚未建立分镜'}</span>`
+              ).join('') : '<span class="scene-ref unresolved">未关联场次</span>'}</div>
+            </article>`;
+          }).join('')}</div>
+        </section>`).join('')}
+      </div>` : '<div class="empty-state">这一分析还没有结构化节点，可点击“重新生成”升级为可导航图谱。</div>'}
     </div>`;
+  const canvas = detail.querySelector('.story-map-canvas');
+  if (canvas) {
+    canvas.scrollLeft = state.storyMapScroll[analysis.subtype] || 0;
+    canvas.addEventListener('scroll', () => {
+      state.storyMapScroll[analysis.subtype] = canvas.scrollLeft;
+    }, { passive: true });
+  }
 }
 
 function renderAssets() {
@@ -479,6 +550,7 @@ function renderShotInspector() {
       ${colors.length ? `<div class="inspector-palette">${colors.map(color => `<i style="background:${escapeHtml(color.hex)}"><span>${escapeHtml(color.name || color.hex)}</span></i>`).join('')}</div>` : ''}
       <div class="inspector-actions">
         <button data-prompt="${group.id}" class="primary-button">AI生成 / 再生成</button>
+        ${colors.length ? `<a href="/api/records/${encodeURIComponent(group.id)}/color-card.svg">下载色卡图片</a>` : ''}
         <button data-copy="${group.id}">复制提示词</button>
         <button data-feedback="${group.id}">展开查看</button>
         <button data-edit-group-lines="${group.id}">编辑线路</button>
@@ -556,9 +628,22 @@ function renderReview() {
 function renderJobs(jobs) {
   return jobs.length ? jobs.map(job => `<div class="job-item ${escapeHtml(job.status)}">
     <i></i><div><strong>${escapeHtml(ACTION_NAMES[job.subtype] || job.name)}</strong>
-    <small>${escapeHtml((job.data?.targets || []).join(' · ') || job.data?.scope?.range || '项目范围')} · ${escapeHtml(job.data?.scope?.aiProvider || '默认引擎')} · ${formatTime(job.updatedAt)}</small></div>
+    <small>${escapeHtml((job.data?.targets || []).join(' · ') || job.data?.scope?.range || '项目范围')} · ${escapeHtml(job.data?.scope?.aiProvider || '默认引擎')} · ${formatTime(job.updatedAt)}</small>
+    ${job.data?.error ? `<p class="job-error">${escapeHtml(job.data.error)}</p>` : ''}
+    ${job.data?.result?.failed?.length ? `<p class="job-warning">部分项目未完成：${escapeHtml(job.data.result.failed.map(item => item.target).join('、'))}</p>` : ''}
+    </div>
+    ${job.status === 'failed' ? `<button class="job-retry" data-retry-job="${job.id}">重新生成</button>` : ''}
     ${statusTag(job.status)}
   </div>`).join('') : '<div class="empty-state">还没有AI任务。你可以从知识图谱、资产库或分镜工作台按需启动。</div>';
+}
+
+function retryJob(jobId) {
+  const job = state.data.jobs.find(item => item.id === jobId);
+  if (!job) return;
+  const scope = { ...(job.data?.scope || {}) };
+  delete scope.aiProvider;
+  delete scope.aiMode;
+  runAI(job.subtype, job.data?.targets || [], scope, `正在重新生成${ACTION_NAMES[job.subtype] || 'AI任务'}`);
 }
 
 function syncRoute() {
@@ -983,6 +1068,10 @@ function bindEvents() {
   });
   $('#cancel-upload').addEventListener('click',() => state.activeUpload?.abort());
   $('#refresh-button').addEventListener('click',() => bootstrap());
+  ['#job-list','#recent-jobs'].forEach(selector => $(selector)?.addEventListener('click',event => {
+    const button = event.target.closest('[data-retry-job]');
+    if (button) retryJob(button.dataset.retryJob);
+  }));
 }
 
 function renderAssetChecks() {
