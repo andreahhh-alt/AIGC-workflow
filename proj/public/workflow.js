@@ -16,6 +16,11 @@ const ASSET_TYPES = [
   ['all','全部资产'],['character','角色'],['location','场景'],['prop','道具'],
   ['style','风格'],['sound','音效'],['music','音乐']
 ];
+const STORY_LINES = [
+  ['all','全部分镜'],['male','男主线'],['female','女主线'],['supporting','配角线'],
+  ['ensemble','群像线'],['romance','感情线'],['mystery','悬疑线'],['world','世界观线'],['other','其他线']
+];
+const STORY_LINE_NAMES = Object.fromEntries(STORY_LINES);
 const ACTION_NAMES = {
   knowledge:'知识图谱分析', assets:'资产提取', scenes:'场次与15秒分镜拆分',
   prompt:'分镜提示词生成', audit:'质量与连续性检查'
@@ -26,13 +31,17 @@ const STATUS_NAMES = {
   failed:'失败', active:'进行中', parsed:'已解析', stored:'已保存'
 };
 
+const initialParams = new URLSearchParams(location.search);
 const state = {
   data: null,
-  projectId: new URLSearchParams(location.search).get('project') || '',
-  view: 'overview',
+  projectId: initialParams.get('project') || '',
+  view: initialParams.get('view') || 'overview',
   fileFilter: 'all',
   assetFilter: 'all',
-  selectedSceneId: '',
+  sceneLineFilter: initialParams.get('line') || 'all',
+  selectedSceneId: initialParams.get('scene') || '',
+  selectedShotGroupId: initialParams.get('group') || '',
+  selectedAnalysisType: initialParams.get('graph') || '',
   selectedKnowledge: new Set(),
   pendingFiles: []
 };
@@ -88,6 +97,8 @@ async function bootstrap(silent = false) {
       state.selectedSceneId = state.data.scenes[0]?.id || '';
     }
     renderAll();
+    switchView(state.view, false);
+    revealSelectedShot();
     if (!silent) toast('项目数据已同步');
   } catch (error) {
     $('#ai-status').className = 'system-pill error';
@@ -106,6 +117,17 @@ function renderAll() {
   renderStoryboard();
   renderReview();
   renderNavigationCounts();
+}
+
+function sceneLines(scene) {
+  return [...new Set([
+    scene.data?.primaryLine,
+    ...(scene.data?.secondaryLines || [])
+  ].filter(Boolean))];
+}
+
+function lineTag(line, primary = false) {
+  return `<span class="line-tag ${escapeHtml(line)} ${primary ? 'primary' : ''}">${escapeHtml(STORY_LINE_NAMES[line] || line || '未分类')}</span>`;
 }
 
 function renderProjectSwitcher() {
@@ -154,6 +176,7 @@ function renderSources() {
       <span>${escapeHtml(file.subtype)}</span>
       <time>${formatSize(file.data?.size)}</time>
       ${statusTag(file.status)}
+      ${file.subtype === 'script' ? `<button class="text-button source-authority ${file.data?.authoritative ? 'active' : ''}" data-authoritative="${file.id}">${file.data?.authoritative ? '权威版本' : '设为权威'}</button>` : '<span></span>'}
     </div>`;
   }).join('') : '<div class="empty-state">还没有这一类别的资料。上传后系统会先提取事实文本，不会自动启动创作分析。</div>';
 }
@@ -170,11 +193,45 @@ function renderKnowledge() {
       <h3>${escapeHtml(title)}</h3>
       <p>${escapeHtml(summary)}</p>
       <footer>${item ? statusTag(item.status) : '<span class="status">未生成</span>'}
-        <button data-generate-one="${type}">${item ? '重新生成' : '单项生成'} →</button>
+        <span class="card-actions">${item ? `<button data-open-knowledge="${type}">查看图谱</button>` : ''}
+        <button data-generate-one="${type}">${item ? '重新生成' : '单项生成'} →</button></span>
       </footer>
     </article>`;
   }).join('');
   $('#knowledge-count').textContent = state.selectedKnowledge.size ? `· ${state.selectedKnowledge.size}` : '';
+  renderKnowledgeDetail();
+}
+
+function renderKnowledgeDetail() {
+  const analyses = state.data.analyses.filter(item => item.subtype !== 'quality_audit');
+  if (!state.selectedAnalysisType || !analyses.some(item => item.subtype === state.selectedAnalysisType)) {
+    state.selectedAnalysisType = analyses[0]?.subtype || '';
+  }
+  const analysis = analyses.find(item => item.subtype === state.selectedAnalysisType);
+  if (!analysis) {
+    $('#knowledge-detail').innerHTML = '<div class="empty-state">生成知识分析后，可在这里查看节点，并从节点直接跳转到对应场次和分镜组。</div>';
+    return;
+  }
+  const nodes = Array.isArray(analysis.data?.nodes) ? analysis.data.nodes : [];
+  const edges = Array.isArray(analysis.data?.edges) ? analysis.data.edges : [];
+  $('#knowledge-detail').innerHTML = `
+    <div class="panel-head graph-head">
+      <div><span class="kicker">LINKED GRAPH</span><h2>${escapeHtml(analysis.name)}</h2><p>${escapeHtml(analysis.data?.summary || '')}</p></div>
+      <div class="graph-switcher">${analyses.map(item => `<button class="chip ${item.subtype === analysis.subtype ? 'active' : ''}" data-open-analysis="${item.subtype}">${escapeHtml(item.name)}</button>`).join('')}</div>
+    </div>
+    <div class="graph-stats"><span>${nodes.length} 个节点</span><span>${edges.length} 条关系</span><span>${analysis.data?.linkedSceneCount || 0} 个已链接场次</span></div>
+    <div class="graph-node-list">${nodes.length ? nodes.map((node,index) => {
+      const refs = Array.isArray(node.sceneRefs) ? node.sceneRefs : [];
+      return `<article class="graph-node">
+        <span class="node-index">${String(index + 1).padStart(2,'0')}</span>
+        <div><h3>${escapeHtml(node.label || node.id || '未命名节点')}</h3><p>${escapeHtml(node.description || '')}</p>
+          <div class="scene-ref-list">${refs.length ? refs.map(ref => ref.sceneId
+            ? `<button data-scene-link="${escapeHtml(ref.sceneId)}">场${escapeHtml(ref.heading ? `${ref.sceneNo} · ${ref.heading}` : ref.sceneNo)}${ref.role ? ` · ${escapeHtml(ref.role)}` : ''} →</button>`
+            : `<span class="scene-ref unresolved">场${escapeHtml(ref.sceneNo)} · ${ref.ambiguous ? '编号冲突待确认' : '尚未建立分镜'}</span>`
+          ).join('') : '<span class="scene-ref unresolved">未关联场次</span>'}</div>
+        </div>
+      </article>`;
+    }).join('') : '<div class="empty-state">这一分析还没有结构化节点，可点击“重新生成”升级为可导航图谱。</div>'}</div>`;
 }
 
 function renderAssets() {
@@ -195,33 +252,82 @@ function renderAssets() {
 
 function renderStoryboard() {
   const scenes = state.data.scenes;
-  $('#scene-list').innerHTML = scenes.length ? scenes.map(scene => {
-    const groups = state.data.shotGroups.filter(group => group.data?.sceneId === scene.id);
+  $('#storyline-filters').innerHTML = STORY_LINES.map(([line,label]) => {
+    const count = line === 'all'
+      ? state.data.shotGroups.length
+      : state.data.shotGroups.filter(group => (group.data?.lineRefs || []).includes(line)).length;
+    return `<button class="chip ${state.sceneLineFilter === line ? 'active' : ''}" data-line-filter="${line}">${label} · ${count}组</button>`;
+  }).join('');
+  const filteredScenes = state.sceneLineFilter === 'all'
+    ? scenes
+    : scenes.filter(scene =>
+      sceneLines(scene).includes(state.sceneLineFilter)
+      || state.data.shotGroups.some(group =>
+        group.data?.sceneId === scene.id && (group.data?.lineRefs || []).includes(state.sceneLineFilter)
+      )
+    );
+  if (filteredScenes.length && !filteredScenes.some(scene => scene.id === state.selectedSceneId)) {
+    state.selectedSceneId = filteredScenes[0].id;
+  }
+  $('#scene-list').innerHTML = filteredScenes.length ? filteredScenes.map(scene => {
+    const allGroups = state.data.shotGroups.filter(group => group.data?.sceneId === scene.id);
+    const groups = state.sceneLineFilter === 'all'
+      ? allGroups
+      : allGroups.filter(group => (group.data?.lineRefs || []).includes(state.sceneLineFilter));
     return `<button class="scene-button ${scene.id === state.selectedSceneId ? 'active' : ''}" data-scene="${scene.id}">
-      <span>${escapeHtml(scene.data?.sceneNo || '—')}</span>
-      <div><strong>${escapeHtml(scene.data?.heading || scene.name)}</strong><small>${groups.length}个15s分镜组 · ${escapeHtml(STATUS_NAMES[scene.status] || scene.status)}</small></div>
+      <span>${escapeHtml(scene.data?.displaySceneNo || scene.data?.sceneNo || '—')}</span>
+      <div><strong>${escapeHtml(scene.data?.heading || scene.name)}</strong>
+      <small>${groups.length}个15s分镜组 · ${escapeHtml(STATUS_NAMES[scene.status] || scene.status)}</small>
+      <div class="scene-line-tags">${sceneLines(scene).slice(0,3).map(line => lineTag(line,line === scene.data?.primaryLine)).join('')}</div></div>
     </button>`;
-  }).join('') : '<div class="empty-state">请先上传剧本，再选择“AI拆分场次”。</div>';
+  }).join('') : '<div class="empty-state">当前线路没有匹配场次。可以切换“全部场次”或重新运行线路分析。</div>';
   const scene = scenes.find(item => item.id === state.selectedSceneId);
   if (!scene) {
     $('#scene-detail').innerHTML = '<div><span class="kicker">NO SCENE</span><h2>尚未建立场次</h2><p>上传剧本后，可按全部剧本或指定范围拆分。</p></div>';
     $('#shot-list').innerHTML = '';
     return;
   }
-  $('#scene-detail').innerHTML = `<div><span class="kicker">SCENE ${escapeHtml(scene.data?.sceneNo || '')}</span>
-    <h2>${escapeHtml(scene.data?.heading || scene.name)}</h2><p>${escapeHtml(scene.data?.summary || '')}</p></div>
-    <div>${statusTag(scene.status)} <button class="text-button" data-approve="${scene.id}">确认场次</button></div>`;
-  const groups = state.data.shotGroups.filter(group => group.data?.sceneId === scene.id);
+  const backlinks = state.data.analyses.flatMap(analysis =>
+    (Array.isArray(analysis.data?.nodes) ? analysis.data.nodes : [])
+      .filter(node => (node.sceneRefs || []).some(ref => ref.sceneId === scene.id))
+      .map(node => ({ analysis, node }))
+  );
+  const events = Array.isArray(scene.data?.events) ? scene.data.events : [];
+  $('#scene-detail').innerHTML = `<div class="scene-center">
+    <div class="scene-center-head">
+      <div><span class="kicker">SCENE ${escapeHtml(scene.data?.displaySceneNo || scene.data?.sceneNo || '')}</span>
+        <h2>${escapeHtml(scene.data?.heading || scene.name)}</h2><p>${escapeHtml(scene.data?.summary || '')}</p></div>
+      <div class="scene-center-status">${scene.data?.numberingConflict ? '<span class="status stale">编号冲突</span>' : ''}${statusTag(scene.status)}
+        <button class="text-button" data-edit-lines="${scene.id}">编辑线路</button>
+        <button class="text-button" data-approve="${scene.id}">确认场次</button></div>
+    </div>
+    <div class="scene-center-grid">
+      <div><span>剧情线路</span><strong>${sceneLines(scene).map(line => lineTag(line,line === scene.data?.primaryLine)).join('') || '待分类'}</strong></div>
+      <div><span>视角人物</span><strong>${escapeHtml(scene.data?.povCharacter || '待确认')}</strong></div>
+      <div><span>出场人物</span><strong>${escapeHtml((scene.data?.characters || []).join(' · ') || '待提取')}</strong></div>
+      <div><span>稳定坐标</span><strong class="mono">${escapeHtml(scene.data?.canonicalKey || scene.id)}</strong></div>
+    </div>
+    ${events.length ? `<div class="scene-events"><span>本场剧情事件</span>${events.map(event => `<i>${escapeHtml(event.label)}<small>${escapeHtml(event.type || '')}</small></i>`).join('')}</div>` : ''}
+    <div class="scene-backlinks"><span>知识图谱反向引用</span>${backlinks.length
+      ? backlinks.map(({analysis,node}) => `<button data-open-analysis="${escapeHtml(analysis.subtype)}">${escapeHtml(analysis.name)} · ${escapeHtml(node.label)} →</button>`).join('')
+      : '<em>尚无知识节点链接到本场</em>'}</div>
+    ${scene.textContent ? `<details class="source-excerpt"><summary>查看剧本来源摘要</summary><p>${escapeHtml(scene.textContent)}</p></details>` : ''}
+  </div>`;
+  const allGroups = state.data.shotGroups.filter(group => group.data?.sceneId === scene.id);
+  const groups = state.sceneLineFilter === 'all'
+    ? allGroups
+    : allGroups.filter(group => (group.data?.lineRefs || []).includes(state.sceneLineFilter));
   $('#shot-list').innerHTML = groups.length ? groups.map(renderShotCard).join('') : '<div class="empty-state">本场还没有15秒分镜组。</div>';
 }
 
 function renderShotCard(group) {
   const beats = group.data?.beats || [];
   const colors = group.data?.colorCard || [];
-  return `<article class="shot-card">
+  return `<article class="shot-card ${group.id === state.selectedShotGroupId ? 'targeted' : ''}" id="shot-${escapeHtml(group.id)}">
     <header class="shot-card-head">
       <span class="shot-code">${escapeHtml(group.data?.code || '')}</span>
-      <div><h3>${escapeHtml(group.data?.title || group.name)}</h3><small>${escapeHtml(group.subtype)} · ${group.data?.duration || 15}s · ${escapeHtml(group.data?.mode || 'T2V')} · ${escapeHtml(group.data?.targetModel || '通用')}</small></div>
+      <div><h3>${escapeHtml(group.data?.title || group.name)}</h3><small>${escapeHtml(group.subtype)} · ${group.data?.duration || 15}s · ${escapeHtml(group.data?.mode || 'T2V')} · ${escapeHtml(group.data?.targetModel || '通用')}</small>
+      <div class="scene-line-tags">${(group.data?.lineRefs || []).map(line => lineTag(line,line === group.data?.primaryLine)).join('')}</div></div>
       ${statusTag(group.status)}
     </header>
     <div class="shot-card-body">
@@ -231,6 +337,7 @@ function renderShotCard(group) {
       </div>
       <div class="shot-actions">
         <button data-prompt="${group.id}">AI生成字段</button>
+        <button data-edit-group-lines="${group.id}">编辑线路</button>
         <button data-approve="${group.id}">确认/锁定</button>
         <button data-copy="${group.id}">复制中文提示词</button>
         <button data-feedback="${group.id}">查看提示词</button>
@@ -266,12 +373,38 @@ function renderJobs(jobs) {
   </div>`).join('') : '<div class="empty-state">还没有AI任务。你可以从知识图谱、资产库或分镜工作台按需启动。</div>';
 }
 
-function switchView(view) {
+function syncRoute() {
+  const params = new URLSearchParams();
+  if (state.projectId) params.set('project',state.projectId);
+  if (state.view !== 'overview') params.set('view',state.view);
+  if (state.view === 'knowledge' && state.selectedAnalysisType) params.set('graph',state.selectedAnalysisType);
+  if (state.view === 'storyboard' && state.selectedSceneId) params.set('scene',state.selectedSceneId);
+  if (state.view === 'storyboard' && state.selectedShotGroupId) params.set('group',state.selectedShotGroupId);
+  if (state.view === 'storyboard' && state.sceneLineFilter !== 'all') params.set('line',state.sceneLineFilter);
+  history.replaceState(null,'',`${location.pathname}${params.size ? `?${params}` : ''}`);
+}
+
+function switchView(view, updateRoute = true) {
   state.view = view;
   $$('.view').forEach(el => el.classList.toggle('active', el.id === `view-${view}`));
   $$('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.view === view));
   $('#sidebar').classList.remove('open');
-  window.scrollTo({ top:0, behavior:'smooth' });
+  if (updateRoute) syncRoute();
+  window.scrollTo({ top:0, behavior:updateRoute ? 'smooth' : 'auto' });
+}
+
+function jumpToScene(sceneId, groupId = '') {
+  state.selectedSceneId = sceneId;
+  state.selectedShotGroupId = groupId;
+  state.sceneLineFilter = 'all';
+  switchView('storyboard');
+  renderStoryboard();
+  revealSelectedShot();
+}
+
+function revealSelectedShot() {
+  if (!state.selectedShotGroupId) return;
+  requestAnimationFrame(() => document.getElementById(`shot-${state.selectedShotGroupId}`)?.scrollIntoView({ behavior:'smooth', block:'center' }));
 }
 
 async function runAI(action, targets, scope = {}, title = 'AI正在分析') {
@@ -328,7 +461,9 @@ function bindEvents() {
   $('#mobile-menu').addEventListener('click',() => $('#sidebar').classList.toggle('open'));
   $('#project-select').addEventListener('change',event => {
     state.projectId = event.target.value;
-    history.replaceState(null,'',`?project=${encodeURIComponent(state.projectId)}`);
+    state.selectedSceneId = '';
+    state.selectedShotGroupId = '';
+    syncRoute();
     bootstrap(true);
   });
   $('#new-project-button').addEventListener('click',() => $('#project-dialog').showModal());
@@ -377,7 +512,28 @@ function bindEvents() {
     $$('#file-filters .chip').forEach(el => el.classList.toggle('active',el === button));
     renderSources();
   });
+  $('#file-list').addEventListener('click',async event => {
+    const button = event.target.closest('[data-authoritative]');
+    if (!button) return;
+    try {
+      await api(`/api/records/${encodeURIComponent(button.dataset.authoritative)}`,{
+        method:'PATCH',
+        body:JSON.stringify({status:'approved',data:{authoritative:true}})
+      });
+      await bootstrap(true);
+      toast('已设为权威剧本，后续全剧拆分将优先使用这一版本');
+    } catch (error) { toast(error.message,'error'); }
+  });
   $('#knowledge-grid').addEventListener('click',event => {
+    const open = event.target.closest('[data-open-knowledge]');
+    if (open) {
+      event.stopPropagation();
+      state.selectedAnalysisType = open.dataset.openKnowledge;
+      renderKnowledgeDetail();
+      syncRoute();
+      $('#knowledge-detail').scrollIntoView({ behavior:'smooth', block:'start' });
+      return;
+    }
     const one = event.target.closest('[data-generate-one]');
     if (one) {
       event.stopPropagation();
@@ -389,6 +545,15 @@ function bindEvents() {
     const type = card.dataset.knowledge;
     state.selectedKnowledge.has(type) ? state.selectedKnowledge.delete(type) : state.selectedKnowledge.add(type);
     renderKnowledge();
+  });
+  $('#knowledge-detail').addEventListener('click',event => {
+    const sceneLink = event.target.closest('[data-scene-link]');
+    if (sceneLink) return jumpToScene(sceneLink.dataset.sceneLink);
+    const analysisLink = event.target.closest('[data-open-analysis]');
+    if (!analysisLink) return;
+    state.selectedAnalysisType = analysisLink.dataset.openAnalysis;
+    renderKnowledgeDetail();
+    syncRoute();
   });
   $('#select-all-knowledge').addEventListener('click',() => {
     if (state.selectedKnowledge.size === KNOWLEDGE_TYPES.length) state.selectedKnowledge.clear();
@@ -433,7 +598,17 @@ function bindEvents() {
     const button = event.target.closest('[data-scene]');
     if (!button) return;
     state.selectedSceneId = button.dataset.scene;
+    state.selectedShotGroupId = '';
     renderStoryboard();
+    syncRoute();
+  });
+  $('#storyline-filters').addEventListener('click',event => {
+    const button = event.target.closest('[data-line-filter]');
+    if (!button) return;
+    state.sceneLineFilter = button.dataset.lineFilter;
+    state.selectedShotGroupId = '';
+    renderStoryboard();
+    syncRoute();
   });
   $('#ai-split-scenes').addEventListener('click',() => {
     const range = prompt('拆分范围（可留空代表全部剧本；例如：场1-20）','');
@@ -446,12 +621,23 @@ function bindEvents() {
   $('#scene-detail').addEventListener('click',event => {
     const button = event.target.closest('[data-approve]');
     if (button) approveRecord(button.dataset.approve,'approved');
+    const editLines = event.target.closest('[data-edit-lines]');
+    if (editLines) return editSceneLines(editLines.dataset.editLines);
+    const analysisLink = event.target.closest('[data-open-analysis]');
+    if (analysisLink) {
+      state.selectedAnalysisType = analysisLink.dataset.openAnalysis;
+      switchView('knowledge');
+      renderKnowledgeDetail();
+      $('#knowledge-detail').scrollIntoView({ behavior:'smooth', block:'start' });
+    }
   });
   $('#shot-list').addEventListener('click',event => {
     const promptButton = event.target.closest('[data-prompt]');
     if (promptButton) return openPromptDialog(promptButton.dataset.prompt);
     const approve = event.target.closest('[data-approve]');
     if (approve) return approveRecord(approve.dataset.approve,'locked');
+    const editLines = event.target.closest('[data-edit-group-lines]');
+    if (editLines) return editGroupLines(editLines.dataset.editGroupLines);
     const copy = event.target.closest('[data-copy]');
     if (copy) return copyPrompt(copy.dataset.copy);
     const feedback = event.target.closest('[data-feedback]');
@@ -482,6 +668,49 @@ async function approveRecord(id,status) {
     await api(`/api/records/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({status})});
     await bootstrap(true);
     toast(status === 'locked' ? '已确认并锁定' : '已确认');
+  } catch (error) { toast(error.message,'error'); }
+}
+
+async function editSceneLines(sceneId) {
+  const scene = state.data.scenes.find(item => item.id === sceneId);
+  if (!scene) return;
+  const allowed = STORY_LINES.filter(([line]) => line !== 'all').map(([line]) => line).join(' / ');
+  const primary = prompt(`主要线路（${allowed}）`,scene.data?.primaryLine || 'other');
+  if (primary === null) return;
+  if (!STORY_LINE_NAMES[primary] || primary === 'all') return toast('主要线路值不正确','error');
+  const secondaryInput = prompt('次要线路，可用英文逗号分隔', (scene.data?.secondaryLines || []).join(','));
+  if (secondaryInput === null) return;
+  const secondaryLines = [...new Set(secondaryInput.split(/[,，]/u).map(value => value.trim()).filter(value => value && value !== primary && STORY_LINE_NAMES[value]))];
+  try {
+    await api(`/api/records/${encodeURIComponent(sceneId)}`,{
+      method:'PATCH',
+      body:JSON.stringify({ status:'review', data:{ primaryLine:primary, secondaryLines } })
+    });
+    await bootstrap(true);
+    toast('场次线路已更新，等待确认');
+  } catch (error) { toast(error.message,'error'); }
+}
+
+async function editGroupLines(groupId) {
+  const group = state.data.shotGroups.find(item => item.id === groupId);
+  if (!group) return;
+  const input = prompt(
+    `本分镜组所属线路，可用英文逗号分隔：${STORY_LINES.filter(([line]) => line !== 'all').map(([line]) => line).join(' / ')}`,
+    (group.data?.lineRefs || []).join(',')
+  );
+  if (input === null) return;
+  const lineRefs = [...new Set(input.split(/[,，]/u).map(value => value.trim()).filter(value => value && value !== 'all' && STORY_LINE_NAMES[value]))];
+  if (!lineRefs.length) return toast('至少保留一条剧情线路','error');
+  try {
+    await api(`/api/records/${encodeURIComponent(groupId)}`,{
+      method:'PATCH',
+      body:JSON.stringify({
+        status:'review',
+        data:{ primaryLine:lineRefs[0], lineRefs, lineRefsSource:'manual_group' }
+      })
+    });
+    await bootstrap(true);
+    toast('分镜组线路已更新，等待确认');
   } catch (error) { toast(error.message,'error'); }
 }
 
