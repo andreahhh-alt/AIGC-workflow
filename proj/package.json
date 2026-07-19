@@ -1,16 +1,22 @@
 {
   "name": "sijizhidi-feedback",
-  "version": "1.0.0",
-  "description": "《四季之地》AIGC 提示词反馈 + AI 分析 · 最小后端",
+  "version": "2.0.0",
+  "description": "AIGC 影视工作流：资料、知识图谱、资产库、15秒分镜、提示词与审阅",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "check": "node --check server.js && node --check public/workflow.js",
+    "test": "node scripts/smoke-test.js"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
     "express": "^4.19.2",
+    "express-rate-limit": "^7.4.1",
+    "mammoth": "^1.8.0",
+    "multer": "^2.0.2",
+    "pdf-parse": "^1.1.1",
     "pg": "^8.13.1"
   }
 }
