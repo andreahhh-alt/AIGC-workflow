@@ -225,6 +225,25 @@ async function initStore() {
   const projects = await Store.list(null, 'project');
   if (!projects.length) await seedSijizhidi();
   await migrateExistingSceneLinks();
+  await recoverInterruptedAIJobs();
+}
+
+async function recoverInterruptedAIJobs() {
+  const projects = await Store.list(null, 'project');
+  for (const project of projects) {
+    const jobs = await Store.list(project.id, 'job');
+    for (const job of jobs) {
+      if (job.status !== 'running') continue;
+      job.status = 'failed';
+      job.updatedAt = now();
+      job.data = {
+        ...job.data,
+        error: '服务重启导致任务中断，请点击重新生成。',
+        interrupted: true
+      };
+      await Store.put(job);
+    }
+  }
 }
 
 async function seedSijizhidi() {

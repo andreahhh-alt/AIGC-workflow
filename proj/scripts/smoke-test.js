@@ -56,6 +56,9 @@ const jsonRequest = async (url, options = {}) => {
     ) {
       throw new Error('AI 提供商可用状态不正确');
     }
+    if (bootstrap.jobs?.some(job => job.status === 'running')) {
+      throw new Error('服务重启后仍有遗留的运行中 AI 任务');
+    }
     const migratedLegacyScene = bootstrap.scenes.find(item => item.id === 'scene_7');
     if (migratedLegacyScene && (!migratedLegacyScene.data?.sceneRef || migratedLegacyScene.data?.primaryLine !== 'male')) {
       throw new Error('旧场次数据迁移失败');
