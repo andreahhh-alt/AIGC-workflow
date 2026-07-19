@@ -198,6 +198,7 @@ async function initStore() {
   }
   const projects = await Store.list(null, 'project');
   if (!projects.length) await seedSijizhidi();
+  await migrateExistingSceneLinks();
 }
 
 async function seedSijizhidi() {
@@ -469,6 +470,77 @@ async function relinkAnalyses(projectId) {
     analysis.data = linkAnalysisData(analysis.data || {}, scenes);
     analysis.updatedAt = now();
     await Store.put(analysis);
+  }
+}
+
+async function migrateExistingSceneLinks() {
+  const projects = await Store.list(null, 'project');
+  for (const project of projects) {
+    const scenes = await Store.list(project.id, 'scene');
+    const groups = await Store.list(project.id, 'shot_group');
+    const counts = scenes.reduce((map, scene) => {
+      const sceneNo = normalizeSceneNo(scene.data?.sceneNo);
+      map.set(sceneNo, (map.get(sceneNo) || 0) + 1);
+      return map;
+    }, new Map());
+    const occurrences = new Map();
+    const migratedScenes = new Map();
+
+    for (const [index, scene] of scenes.entries()) {
+      const sceneNo = normalizeSceneNo(scene.data?.sceneNo || scene.name.match(/场\s*([^\s·]+)/u)?.[1] || index + 1);
+      const occurrence = (occurrences.get(sceneNo) || 0) + 1;
+      occurrences.set(sceneNo, occurrence);
+      const duplicateSceneNo = (counts.get(sceneNo) || 0) > 1;
+      const legacyMaleLine = project.id === 'sijizhidi'
+        && ['7', '8', '9', '10', '11', '12'].includes(sceneNo)
+        && (scene.data?.sourceRefs || []).includes('legacy-site');
+      const primaryLine = scene.data?.primaryLine || (legacyMaleLine ? 'male' : 'other');
+      const nextData = {
+        ...scene.data,
+        sceneNo,
+        sceneRef: scene.data?.sceneRef || `${sceneNo}#${occurrence}`,
+        displaySceneNo: scene.data?.displaySceneNo || (duplicateSceneNo ? `${sceneNo}${String.fromCharCode(64 + occurrence)}` : sceneNo),
+        sceneOccurrence: scene.data?.sceneOccurrence || occurrence,
+        sceneIndex: scene.data?.sceneIndex || index + 1,
+        numberingConflict: scene.data?.numberingConflict ?? duplicateSceneNo,
+        canonicalKey: scene.data?.canonicalKey || canonicalSceneKey(scene.data?.episodeNo || 'film', sceneNo, occurrence),
+        primaryLine: normalizeLine(primaryLine),
+        secondaryLines: normalizeLineList(scene.data?.secondaryLines || []),
+        povCharacter: scene.data?.povCharacter || (legacyMaleLine ? '刘夏' : ''),
+        characters: Array.isArray(scene.data?.characters) ? scene.data.characters : [],
+        events: Array.isArray(scene.data?.events) ? scene.data.events : []
+      };
+      const changed = JSON.stringify(nextData) !== JSON.stringify(scene.data || {});
+      scene.data = nextData;
+      migratedScenes.set(scene.id, scene);
+      if (changed) {
+        scene.updatedAt = now();
+        await Store.put(scene);
+      }
+    }
+
+    for (const group of groups) {
+      const scene = migratedScenes.get(group.data?.sceneId);
+      if (!scene) continue;
+      const nextData = {
+        ...group.data,
+        sceneNo: group.data?.sceneNo || scene.data.sceneNo,
+        sceneRef: group.data?.sceneRef || scene.data.sceneRef,
+        displaySceneNo: group.data?.displaySceneNo || scene.data.displaySceneNo,
+        canonicalSceneKey: group.data?.canonicalSceneKey || scene.data.canonicalKey,
+        primaryLine: group.data?.primaryLine || scene.data.primaryLine,
+        lineRefs: normalizeLineList(group.data?.lineRefs?.length
+          ? group.data.lineRefs
+          : [scene.data.primaryLine, ...(scene.data.secondaryLines || [])]),
+        lineRefsSource: group.data?.lineRefsSource || 'scene_inherited'
+      };
+      if (JSON.stringify(nextData) !== JSON.stringify(group.data || {})) {
+        group.data = nextData;
+        group.updatedAt = now();
+        await Store.put(group);
+      }
+    }
+    await relinkAnalyses(project.id);
   }
 }
 
