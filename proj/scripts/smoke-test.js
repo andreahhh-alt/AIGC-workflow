@@ -4,7 +4,18 @@ const port = 3210;
 const base = `http://127.0.0.1:${port}`;
 const child = spawn(process.execPath, ['server.js'], {
   cwd: process.cwd(),
-  env: { ...process.env, PORT: String(port), RENDER: 'true', DATABASE_URL: '', AI_API_KEY: '', DEEPSEEK_API_KEY: '', ANTHROPIC_API_KEY: '' },
+  env: {
+    ...process.env,
+    PORT: String(port),
+    RENDER: 'true',
+    DATABASE_URL: '',
+    AI_PROVIDER: 'kimi',
+    AI_MODEL: 'kimi-k3',
+    MOONSHOT_API_KEY: 'test-key',
+    AI_API_KEY: '',
+    DEEPSEEK_API_KEY: '',
+    ANTHROPIC_API_KEY: ''
+  },
   stdio: ['ignore', 'pipe', 'pipe']
 });
 
@@ -36,6 +47,9 @@ const jsonRequest = async (url, options = {}) => {
   try {
     const bootstrap = await waitForServer();
     if (!bootstrap.project?.id) throw new Error('缺少种子项目');
+    if (!bootstrap.ai?.configured || bootstrap.ai.provider !== 'kimi' || bootstrap.ai.model !== 'kimi-k3') {
+      throw new Error('Kimi 提供商环境变量未生效');
+    }
     const migratedLegacyScene = bootstrap.scenes.find(item => item.id === 'scene_7');
     if (migratedLegacyScene && (!migratedLegacyScene.data?.sceneRef || migratedLegacyScene.data?.primaryLine !== 'male')) {
       throw new Error('旧场次数据迁移失败');
@@ -169,7 +183,9 @@ const jsonRequest = async (url, options = {}) => {
       sceneLinePropagation: inheritedGroup.data.lineRefs,
       timecodedFeedback: resolvedComment.data.timecode,
       oversizedUploadStatus: oversizedResponse.status,
-      proxyValidationClean: true
+      proxyValidationClean: true,
+      aiProvider: bootstrap.ai.provider,
+      aiModel: bootstrap.ai.model
     }));
   } finally {
     child.kill();
