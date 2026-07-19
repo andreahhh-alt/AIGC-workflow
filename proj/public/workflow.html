@@ -16,7 +16,7 @@
         <span class="brand-mark">帧</span>
         <span>
           <strong>AIGC 影视工作流</strong>
-          <small>PROJECT INTELLIGENCE · v2.0</small>
+          <small>CINEMATIC CREATIVE DESKTOP · v3.0</small>
         </span>
       </a>
       <div class="project-switcher">
@@ -34,13 +34,13 @@
     <aside class="sidebar" id="sidebar">
       <nav aria-label="主导航">
         <p class="nav-label">项目</p>
-        <button class="nav-item active" data-view="overview"><span>01</span>项目总览</button>
-        <button class="nav-item" data-view="sources"><span>02</span>资料与解析 <b id="nav-files">0</b></button>
-        <button class="nav-item" data-view="knowledge"><span>03</span>知识图谱 <b id="nav-analyses">0</b></button>
+        <button class="nav-item active" data-view="overview"><span>⌂</span><div>项目总览<small>Project room</small></div></button>
+        <button class="nav-item" data-view="sources"><span>⌑</span><div>资料与解析<small>Source archive</small></div><b id="nav-files">0</b></button>
+        <button class="nav-item" data-view="knowledge"><span>⌘</span><div>故事地图<small>Story map</small></div><b id="nav-analyses">0</b></button>
         <p class="nav-label">制作</p>
-        <button class="nav-item" data-view="assets"><span>04</span>资产库 <b id="nav-assets">0</b></button>
-        <button class="nav-item" data-view="storyboard"><span>05</span>场次与分镜 <b id="nav-groups">0</b></button>
-        <button class="nav-item" data-view="review"><span>06</span>AI任务与审阅</button>
+        <button class="nav-item" data-view="assets"><span>◫</span><div>视觉资产墙<small>Asset wall</small></div><b id="nav-assets">0</b></button>
+        <button class="nav-item" data-view="storyboard"><span>▶</span><div>导演剪辑台<small>Cut room</small></div><b id="nav-groups">0</b></button>
+        <button class="nav-item" data-view="review"><span>✓</span><div>审阅与版本<small>Review room</small></div></button>
       </nav>
       <div class="sidebar-foot">
         <div class="storage-meter">
@@ -147,7 +147,7 @@
 
       <section class="view" id="view-knowledge">
         <div class="page-head">
-          <div><span class="kicker">PROJECT GRAPH</span><h1>知识图谱</h1><p>选择单项、多项或全部生成。所有视图共享同一套人物、事件、时间和场次事实。</p></div>
+          <div><span class="kicker">STORY MAP</span><h1>故事地图</h1><p>沿剧本时间展开人物线、事件、转折与伏笔。节点不是报告，而是通往场次和分镜的入口。</p></div>
           <div class="page-actions">
             <button class="secondary-button" id="select-all-knowledge">全选</button>
             <button class="primary-button" id="generate-knowledge">生成选中项 <span id="knowledge-count">0</span></button>
@@ -167,7 +167,7 @@
 
       <section class="view" id="view-assets">
         <div class="page-head">
-          <div><span class="kicker">PRODUCTION ASSETS</span><h1>资产库</h1><p>被锁定的视觉与声音锚点会自动注入后续分镜，减少角色和场景漂移。</p></div>
+          <div><span class="kicker">VISUAL ASSET WALL</span><h1>视觉资产墙</h1><p>像创意工作室的素材墙一样浏览角色、场景、道具、色彩与声音，并追踪它们在哪些场次出现。</p></div>
           <div class="page-actions">
             <button class="secondary-button" id="extract-assets">AI提取资产</button>
             <button class="primary-button" id="new-asset">＋ 新建资产</button>
@@ -179,7 +179,7 @@
 
       <section class="view" id="view-storyboard">
         <div class="page-head">
-          <div><span class="kicker">15 SECOND UNITS</span><h1>场次与分镜工作台</h1><p>场次 → 15秒分镜组 → 2–4秒单一动作节拍。先确认拆分，再按字段生成提示词。</p></div>
+          <div><span class="kicker">DIRECTOR'S CUT ROOM</span><h1>导演剪辑台</h1><p>上层看剧情线路，中层看场次原文，下层编排15秒分镜；右侧检查器始终跟随当前选择。</p></div>
           <div class="page-actions">
             <button class="secondary-button" id="ai-split-scenes">AI拆分场次</button>
             <button class="primary-button" id="audit-storyboard">AI检查连续性</button>
@@ -192,12 +192,17 @@
           </div>
           <div class="filter-row" id="storyline-filters"></div>
         </div>
-        <div class="storyboard-layout">
-          <aside class="scene-list" id="scene-list"></aside>
-          <div class="shot-workspace">
+        <div class="cut-room">
+          <aside class="scene-column">
+            <div class="column-title"><span>SCENES</span><strong>全剧场次</strong></div>
+            <div class="scene-list" id="scene-list"></div>
+          </aside>
+          <section class="cut-stage">
             <div class="scene-detail" id="scene-detail"></div>
+            <div class="filmstrip-head"><span>15 SECOND FILMSTRIP</span><small>选择分镜后在右侧完成提示词、反馈与锁定</small></div>
             <div class="shot-list" id="shot-list"></div>
-          </div>
+          </section>
+          <aside class="shot-inspector" id="shot-inspector"></aside>
         </div>
       </section>
 
@@ -218,6 +223,12 @@
         </div>
       </section>
     </main>
+    <section class="context-command" id="context-command" aria-live="polite"></section>
+    <section class="scene-rail-shell" id="scene-rail-shell">
+      <button class="rail-toggle" id="rail-toggle" aria-label="收起场次轨道">⌄</button>
+      <div class="rail-label"><span>SCENE BUS</span><strong>全剧场次轨道</strong></div>
+      <div class="scene-rail" id="scene-rail"></div>
+    </section>
   </div>
 
   <input id="file-input" type="file" multiple accept=".docx,.pdf,.txt,.md,.json,.csv,.srt,image/*" hidden>

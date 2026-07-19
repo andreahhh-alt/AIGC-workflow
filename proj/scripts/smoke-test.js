@@ -42,7 +42,14 @@ const jsonRequest = async (url, options = {}) => {
     }
     const pageResponse = await fetch(base);
     const pageHtml = await pageResponse.text();
-    if (!pageResponse.ok || !pageHtml.includes('storyline-filters') || !pageHtml.includes('knowledge-detail')) {
+    if (
+      !pageResponse.ok
+      || !pageHtml.includes('storyline-filters')
+      || !pageHtml.includes('knowledge-detail')
+      || !pageHtml.includes('scene-rail')
+      || !pageHtml.includes('shot-inspector')
+      || !Array.isArray(bootstrap.comments)
+    ) {
       throw new Error('跨模块导航界面未加载');
     }
 
@@ -87,6 +94,27 @@ const jsonRequest = async (url, options = {}) => {
         data: { code: 'T1-1', sceneId: manualScene.id, primaryLine: 'male', lineRefs: ['male'] }
       })
     });
+    const comment = await jsonRequest(`${base}/api/projects/${projectId}/records`, {
+      method: 'POST',
+      body: JSON.stringify({
+        kind: 'comment',
+        subtype: 'shot_feedback',
+        name: '时间码反馈',
+        status: 'review',
+        data: {
+          sceneId: manualScene.id,
+          shotGroupId: manualGroup.id,
+          timecode: '00:06',
+          role: '导演',
+          text: '动作转折提前。',
+          resolved: false
+        }
+      })
+    });
+    const resolvedComment = await jsonRequest(`${base}/api/records/${comment.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'approved', data: { resolved: true } })
+    });
     await jsonRequest(`${base}/api/records/${manualScene.id}`, {
       method: 'PATCH',
       body: JSON.stringify({
@@ -102,6 +130,8 @@ const jsonRequest = async (url, options = {}) => {
       || approved.status !== 'approved'
       || inheritedGroup?.data?.primaryLine !== 'female'
       || !inheritedGroup?.data?.lineRefs?.includes('romance')
+      || resolvedComment.data?.timecode !== '00:06'
+      || resolvedComment.data?.resolved !== true
     ) {
       throw new Error('核心工作流断言失败');
     }
@@ -119,7 +149,8 @@ const jsonRequest = async (url, options = {}) => {
       ].flat().length,
       upload: uploaded.files[0].name,
       manualRecordStatus: approved.status,
-      sceneLinePropagation: inheritedGroup.data.lineRefs
+      sceneLinePropagation: inheritedGroup.data.lineRefs,
+      timecodedFeedback: resolvedComment.data.timecode
     }));
   } finally {
     child.kill();
