@@ -68,6 +68,15 @@ const formatSize = size => {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 };
 const statusTag = status => `<span class="status ${escapeHtml(status)}">${escapeHtml(STATUS_NAMES[status] || status || '未生成')}</span>`;
+const sceneNumberCollator = new Intl.Collator('zh-CN',{ numeric:true, sensitivity:'base' });
+const compareScenes = (a,b) => {
+  const aNo = String(a.data?.displaySceneNo || a.data?.sceneNo || '');
+  const bNo = String(b.data?.displaySceneNo || b.data?.sceneNo || '');
+  const byNumber = sceneNumberCollator.compare(aNo,bNo);
+  if (byNumber) return byNumber;
+  return Number(a.data?.sceneOccurrence || 1) - Number(b.data?.sceneOccurrence || 1)
+    || Number(a.data?.sceneIndex || a.order || 0) - Number(b.data?.sceneIndex || b.order || 0);
+};
 
 async function api(url, options = {}) {
   const response = await fetch(url, {
@@ -171,6 +180,7 @@ async function bootstrap(silent = false) {
     const query = state.projectId ? `?projectId=${encodeURIComponent(state.projectId)}` : '';
     state.data = await api(`/api/workflow/bootstrap${query}`);
     state.data.comments ||= [];
+    state.data.scenes = [...(state.data.scenes || [])].sort(compareScenes);
     syncRunningJobs();
     if (!state.projectId && state.data.project) state.projectId = state.data.project.id;
     if (!state.selectedSceneId || !state.data.scenes.some(scene => scene.id === state.selectedSceneId)) {
