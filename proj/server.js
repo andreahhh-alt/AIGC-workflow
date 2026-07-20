@@ -551,26 +551,27 @@ async function callAI(system, user, options = {}) {
   };
   if (currentProvider === 'kimi' && currentModel === 'kimi-k3') {
     requestBody.stream = true;
-    requestBody.max_completion_tokens = options.json ? 16000 : 10000;
+    requestBody.max_completion_tokens = options.maxTokens || (options.json ? 16000 : 10000);
     requestBody.reasoning_effort = options.reasoningEffort || (options.json ? 'medium' : 'high');
     if (options.json) requestBody.response_format = { type: 'json_object' };
   } else {
-    requestBody.max_tokens = options.json ? 12000 : 6000;
+    requestBody.max_tokens = options.maxTokens || (options.json ? 12000 : 6000);
     if (currentProvider === 'deepseek') requestBody.thinking = { type: 'disabled' };
     if (options.json) requestBody.response_format = { type: 'json_object' };
   }
   let response;
   let raw = '';
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const requestAttempts = options.retryNetwork === false ? 1 : 2;
+  for (let attempt = 0; attempt < requestAttempts; attempt += 1) {
     try {
       response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
         body: JSON.stringify(requestBody),
-        signal: AbortSignal.timeout(240000)
+        signal: AbortSignal.timeout(options.timeoutMs || 240000)
       });
     } catch (error) {
-      if (attempt === 0) {
+      if (attempt + 1 < requestAttempts) {
         await new Promise(resolve => setTimeout(resolve, 800));
         continue;
       }
@@ -580,7 +581,7 @@ async function callAI(system, user, options = {}) {
       raw = '';
       break;
     }
-    if (![429, 500, 502, 503, 504].includes(response.status) || attempt === 1) break;
+    if (![429, 500, 502, 503, 504].includes(response.status) || attempt + 1 >= requestAttempts) break;
     raw = await response.text();
     await new Promise(resolve => setTimeout(resolve, 800));
   }
@@ -634,6 +635,45 @@ function parseAIJson(text) {
     if (Number.isFinite(start) && end > start) return JSON.parse(cleaned.slice(start, end + 1));
     throw new Error('AI返回内容不是有效JSON，请重试。');
   }
+}
+
+async function callAIJson(system, user, options = {}) {
+  const raw = await callAI(system, user, { ...options, json: true });
+  try {
+    return parseAIJson(raw);
+  } catch (parseError) {
+    const repairSource = String(raw || '').slice(0, 50000);
+    if (!repairSource.trim()) throw parseError;
+    const repaired = await callAI(
+      '你是JSON修复器。只返回一个语法有效、结构不丢失的JSON对象，不要解释，不要Markdown。',
+      `修复下面的JSON。补齐缺少的逗号、引号、括号并转义字符串中的引号；不要新增原文没有的业务内容：\n${repairSource}`,
+      {
+        json: true,
+        reasoningEffort: 'low',
+        maxTokens: Math.min(options.maxTokens || 12000, 12000),
+        timeoutMs: options.repairTimeoutMs || 120000,
+        retryNetwork: false
+      }
+    );
+    return parseAIJson(repaired);
+  }
+}
+
+function chunkContext(text, maxChars = 28000) {
+  const source = String(text || '');
+  if (source.length <= maxChars) return [source];
+  const chunks = [];
+  let cursor = 0;
+  while (cursor < source.length) {
+    let end = Math.min(cursor + maxChars, source.length);
+    if (end < source.length) {
+      const boundary = source.lastIndexOf('\n', end);
+      if (boundary > cursor + Math.floor(maxChars * 0.65)) end = boundary;
+    }
+    chunks.push(source.slice(cursor, end));
+    cursor = end;
+  }
+  return chunks.filter(chunk => chunk.trim());
 }
 
 const STORY_LINES = new Set(['male', 'female', 'supporting', 'ensemble', 'world', 'romance', 'mystery', 'other']);
@@ -1038,8 +1078,14 @@ async function runKnowledgeJob(projectId, targets, context) {
     sceneNo: scene.data?.sceneNo,
     heading: scene.data?.heading,
     primaryLine: scene.data?.primaryLine,
-    secondaryLines: scene.data?.secondaryLines
+    secondaryLines: scene.data?.secondaryLines,
+    summary: scene.data?.summary,
+    events: scene.data?.events,
+    sourceExcerpt: String(scene.textContent || scene.data?.sourceText || '').slice(0, 700)
   }));
+  const knowledgeSource = scenes.length
+    ? `以下为最新场次索引、摘要与原文摘录：\n${JSON.stringify(sceneRegistry)}`
+    : String(context || '').slice(0, 70000);
   const outcomes = await mapWithConcurrency(targets, 2, async (target, targetIndex) => {
     const spec = KNOWLEDGE_SPECS[target] || { chartType:'timeline', minNodes:6, minEdges:3, instruction:'影视知识结构图。' };
     const prompt = `只生成一个影视项目知识分析，分析类型必须为：${target}。
@@ -1053,12 +1099,12 @@ async function runKnowledgeJob(projectId, targets, context) {
 4. 人物线必须具体填写目标、行动、阻力、选择、代价；没有依据的字段留空，不得杜撰；
 5. edges必须引用真实节点ID，用来表达跨节点因果和回收；
 6. 每个结论标明sourceRefs；推断必须明确写“AI推断”。
-当前已确认场次索引：
-${JSON.stringify(sceneRegistry)}
 资料如下：
-${context}`;
+${knowledgeSource}`;
     try {
-      let data = parseAIJson(await callAI(FILM_SYSTEM, prompt, { json: true }));
+      let data = await callAIJson(FILM_SYSTEM, prompt, {
+        reasoningEffort:'medium', maxTokens:16000, timeoutMs:300000, retryNetwork:false
+      });
       let item = data.result || (Array.isArray(data.results) ? data.results[0] : null);
       if (!item || !Array.isArray(item.nodes) || !item.nodes.length) {
         throw new Error('没有返回可用的结构化节点');
@@ -1070,7 +1116,9 @@ ${context}`;
 请完整重做，不要解释。尤其不能只返回一个节点，也不能把JSON对象塞进description字符串。
 上一次结果：
 ${JSON.stringify(item)}`;
-        data = parseAIJson(await callAI(FILM_SYSTEM, repairPrompt, { json: true }));
+        data = await callAIJson(FILM_SYSTEM, repairPrompt, {
+          reasoningEffort:'low', maxTokens:16000, timeoutMs:240000, retryNetwork:false
+        });
         item = data.result || (Array.isArray(data.results) ? data.results[0] : null);
         quality = knowledgeQuality(target, item);
       }
@@ -1108,18 +1156,48 @@ async function runAssetJob(projectId, targets, context) {
     sceneRef: scene.data?.sceneRef,
     heading: scene.data?.heading
   }));
+  const sourceChunks = chunkContext(context, 28000);
   const outcomes = await mapWithConcurrency(targets, 2, async target => {
-    const prompt = `只从资料中提取并整理一种资产类别：${target}。
+    try {
+      const chunkResults = await mapWithConcurrency(sourceChunks, 2, async (sourceChunk, chunkIndex) => {
+        const prompt = `只从这一批资料中提取并整理一种资产类别：${target}。这是第${chunkIndex + 1}/${sourceChunks.length}批。
 输出严格JSON：
 {"assets":[{"type":"${target}","name":"资产名","description":"可直接用于制作的具体描述","tags":["标签"],"visualAnchor":"视觉锚点或声音锚点","continuity":"连续性要求","sceneRefs":[{"sceneNo":"14","sceneRef":"14#1","role":"出现/使用"}],"sourceRefs":["来源"],"confidence":"high|medium|low"}]}
-同名资产合并，不能凭空新增主要人物；每项必须能追溯到资料。
+不能凭空新增主要人物；每项必须能追溯到本批资料。没有该类别时返回{"assets":[]}。
 场次索引：
 ${JSON.stringify(sceneRegistry)}
-资料如下：
-${context}`;
-    try {
-      const data = parseAIJson(await callAI(FILM_SYSTEM, prompt, { json: true }));
-      const assets = Array.isArray(data.assets) ? data.assets : [];
+本批资料：
+${sourceChunk}`;
+        try {
+          const data = await callAIJson(FILM_SYSTEM, prompt, {
+            reasoningEffort:'low', maxTokens:8000, timeoutMs:180000, retryNetwork:false
+          });
+          return { ok:true, assets:Array.isArray(data.assets) ? data.assets : [] };
+        } catch (error) {
+          return { ok:false, assets:[], error:String(error.message || error) };
+        }
+      });
+      const successfulChunks = chunkResults.filter(result => result.ok);
+      if (!successfulChunks.length) {
+        throw new Error(chunkResults.map(result => result.error).filter(Boolean).join('；') || '所有资料分块均失败');
+      }
+      const mergedAssets = new Map();
+      for (const item of successfulChunks.flatMap(result => result.assets)) {
+        const key = String(item.name || '').trim().toLowerCase();
+        if (!key) continue;
+        const existing = mergedAssets.get(key);
+        if (!existing) {
+          mergedAssets.set(key, item);
+          continue;
+        }
+        existing.tags = [...new Set([...(existing.tags || []), ...(item.tags || [])])];
+        existing.sceneRefs = [...(existing.sceneRefs || []), ...(item.sceneRefs || [])];
+        existing.sourceRefs = [...new Set([...(existing.sourceRefs || []), ...(item.sourceRefs || [])])];
+        if (String(item.description || '').length > String(existing.description || '').length) {
+          existing.description = item.description;
+        }
+      }
+      const assets = [...mergedAssets.values()];
       for (const item of assets) {
         item.type = target;
         const linked = linkAnalysisData({ nodes: [item] }, scenes).nodes[0] || item;
@@ -1130,7 +1208,10 @@ ${context}`;
           order: now(), createdAt: now(), updatedAt: now()
         });
       }
-      return { target, ok: true, count: assets.length };
+      return {
+        target, ok: true, count: assets.length,
+        warnings: chunkResults.filter(result => !result.ok).map(result => result.error)
+      };
     } catch (error) {
       return { target, ok: false, count: 0, error: String(error.message || error) };
     }
@@ -1215,7 +1296,7 @@ async function runSceneJob(projectId, scope, context) {
     scope
   );
   const batches = [];
-  for (let index = 0; index < parsedBlocks.length; index += 8) batches.push(parsedBlocks.slice(index, index + 8));
+  for (let index = 0; index < parsedBlocks.length; index += 4) batches.push(parsedBlocks.slice(index, index + 4));
 
   const buildPrompt = sourceScenes => `为以下已经确定边界的剧本场次规划15秒分镜组和剧情线路标签。${scope ? `范围：${scope}` : ''}
 场次号、sceneIndex、场次顺序和原文不得修改、合并或遗漏。每个15秒单元内部按2-4秒动作节拍拆分。
@@ -1232,8 +1313,25 @@ ${JSON.stringify(sourceScenes)}`;
   let scenes;
   if (batches.length) {
     const batchResults = await mapWithConcurrency(batches, 3, async batch => {
-      const data = parseAIJson(await callAI(FILM_SYSTEM, buildPrompt(batch), { json: true }));
-      const generated = Array.isArray(data.scenes) ? data.scenes : [];
+      let data = await callAIJson(FILM_SYSTEM, buildPrompt(batch), {
+        reasoningEffort:'low', maxTokens:10000, timeoutMs:180000, retryNetwork:false
+      });
+      let generated = Array.isArray(data.scenes) ? data.scenes : [];
+      const missing = batch.filter((sourceScene,index) => {
+        const result = generated.find(item => Number(item.sceneIndex) === Number(sourceScene.sceneIndex)) || generated[index];
+        return !result || !Array.isArray(result.shotGroups) || !result.shotGroups.length;
+      });
+      if (missing.length) {
+        const retryData = await callAIJson(FILM_SYSTEM, `${buildPrompt(missing)}
+上一次遗漏了部分场次。本次只返回输入中的${missing.length}个场次，每场必须至少有1个shotGroups，每组至少有1个固定15秒shot。`, {
+          reasoningEffort:'low', maxTokens:9000, timeoutMs:180000, retryNetwork:false
+        });
+        const repairedScenes = Array.isArray(retryData.scenes) ? retryData.scenes : [];
+        generated = [
+          ...generated.filter(item => !missing.some(sourceScene => Number(sourceScene.sceneIndex) === Number(item.sceneIndex))),
+          ...repairedScenes
+        ];
+      }
       return batch.map((sourceScene, index) => {
         const result = generated.find(item => Number(item.sceneIndex) === Number(sourceScene.sceneIndex))
           || generated[index]
@@ -1252,7 +1350,9 @@ ${JSON.stringify(sourceScenes)}`;
     scenes = batchResults.flat();
   } else {
     const fallbackPrompt = `${buildPrompt([])}\n未能确定性识别场次标题，请直接从以下资料识别全部场次：\n${context}`;
-    const data = parseAIJson(await callAI(FILM_SYSTEM, fallbackPrompt, { json: true }));
+    const data = await callAIJson(FILM_SYSTEM, fallbackPrompt, {
+      reasoningEffort:'low', maxTokens:12000, timeoutMs:240000, retryNetwork:false
+    });
     scenes = Array.isArray(data.scenes) ? data.scenes : [];
   }
   const incompleteScenes = parsedBlocks.length
@@ -1377,20 +1477,34 @@ async function runPromptJob(projectId, targets, scope) {
   const scene = group.data.sceneId ? await Store.get(group.data.sceneId) : null;
   const shots = normalizeGroupShots(group.data || {});
   const fields = Array.isArray(scope?.fields) && scope.fields.length ? scope.fields : ['prompt', 'colorCard', 'continuity'];
+  const relevantAssets = assets.filter(asset =>
+    recordSceneIds(asset).includes(group.data.sceneId)
+    || (scene?.data?.characters || []).some(character => asset.name === character)
+  );
+  const promptAssets = (relevantAssets.length ? relevantAssets : assets)
+    .slice(0, 24)
+    .map(item => ({
+      type:item.subtype, name:item.name,
+      description:item.data?.description,
+      visualAnchor:item.data?.visualAnchor,
+      continuity:item.data?.continuity
+    }));
   const prompt = `为以下分镜组生成用户选择的字段：${fields.join('、')}。
 层级关系必须严格遵守：场次 > 分镜组 > 一个或以上15秒分镜。色卡只在分镜组层生成一张，由组内全部15秒分镜共用；不要给每个15秒分镜重复生成色卡。
 项目STYLE LOCK：${JSON.stringify(project?.data?.styleLock || {})}
 场次：${JSON.stringify(scene?.data || {})}
 分镜组：${JSON.stringify(group.data)}
 组内15秒分镜：${JSON.stringify(shots)}
-可用资产：${JSON.stringify(assets.slice(0, 80).map(item => ({ type: item.subtype, name: item.name, data: item.data })))}
+与本场相关的可用资产：${JSON.stringify(promptAssets)}
 目标模型：${scope?.targetModel || group.data.targetModel || '通用'}
 模式：${scope?.mode || group.data.mode || 'T2V'}
 严格执行D类影视提示词v4.7：每个时间段最多一个核心动作；台词包含触发时机、音量语气、同步肢体、停顿节奏；运镜为单一方向并带速度；Dolly与Zoom不得混用；包含关键帧强制声明和连续性约束。
 输出严格JSON：
 {"groupSummary":"分镜组叙事功能","styleLock":"本组共用STYLE LOCK","mode":"T2V|I2V","colorCard":[{"hex":"#RRGGBB","name":"颜色名","usage":"组内用途"}],"groupContinuity":["组内全部分镜共用的连续性要求"],"shots":[{"shotCode":"对应输入code","title":"15秒分镜标题","promptZh":"完整结构化中文提示词","promptEn":"结构完全对应英文提示词","camera":{"position":"机位位置、高度与角度","shotSize":"景别","lens":"焦段mm","aperture":"光圈F值","movement":"单向且带速度的运镜"},"timeline":[{"time":"0-4s","shotSize":"景别","movement":"运镜","action":"唯一核心动作","dialoguePerformance":"台词四要素；无台词则空"}],"keyframes":[{"time":"约Xs","frame":"精确画面"}],"constraints":{"must":["必须有"],"avoid":["不允许"],"continuity":["状态延续"]},"sound":["环境与动作音效"],"transitionCard":"到下一15秒分镜的跨段衔接卡"}]}
 shots数量与输入完全一致；没有要求的字段可留空字符串或空数组。`;
-  const data = parseAIJson(await callAI(FILM_SYSTEM, prompt, { json: true }));
+  const data = await callAIJson(FILM_SYSTEM, prompt, {
+    reasoningEffort:'low', maxTokens:12000, timeoutMs:210000, retryNetwork:false
+  });
   const generatedShots = Array.isArray(data.shots) ? data.shots : [];
   const shotPrompts = shots.map((shot, index) => {
     const generated = generatedShots.find(item => item.shotCode === shot.code) || generatedShots[index] || {};
@@ -1461,8 +1575,10 @@ async function runAssetPromptJob(projectId, targets, context) {
 {"promptZh":"完整中文生成提示词","promptEn":"结构对应英文提示词","negativePrompt":"负面提示词","visualNotes":["造型/材质/色彩/连续性锚点"],"sourceRefs":["依据"]}
 角色必须保持身份与服装连续性；场景必须说明空间结构、时间、天气和光线；道具必须说明材质、尺度和磨损；声音资产说明声源、空间与动态。没有依据的内容标记“AI推断”。
 项目资料节选：
-${context.slice(0, 70000)}`;
-      const data = parseAIJson(await callAI(FILM_SYSTEM, prompt, { json: true }));
+${context.slice(0, 18000)}`;
+      const data = await callAIJson(FILM_SYSTEM, prompt, {
+        reasoningEffort:'low', maxTokens:8000, timeoutMs:180000, retryNetwork:false
+      });
       asset.status = 'ai_draft';
       asset.updatedAt = now();
       asset.data = {
@@ -1493,14 +1609,30 @@ async function runAuditJob(projectId, targets) {
   const scenes = await Store.list(projectId, 'scene');
   const groups = await Store.list(projectId, 'shot_group');
   const assets = await Store.list(projectId, 'asset');
+  const compactScenes = scenes.map(scene => ({
+    id:scene.id, sceneNo:scene.data?.displaySceneNo || scene.data?.sceneNo,
+    heading:scene.data?.heading, summary:scene.data?.summary,
+    characters:scene.data?.characters, events:scene.data?.events
+  }));
+  const compactGroups = groups.map(group => ({
+    id:group.id, sceneId:group.data?.sceneId, code:group.data?.code,
+    title:group.data?.title, shots:normalizeGroupShots(group.data || {}),
+    continuity:group.data?.groupContinuity
+  }));
+  const compactAssets = assets.map(asset => ({
+    id:asset.id, type:asset.subtype, name:asset.name,
+    continuity:asset.data?.continuity, sceneIds:recordSceneIds(asset)
+  }));
   const prompt = `检查以下影视项目数据，检查类型：${targets.join('、')}。
 重点：场次遗漏、人物/道具连续性、180度线、单段动作过密、光线漂移、末帧衔接、提示词与目标模型冲突。
 输出格式：{"issues":[{"severity":"high|medium|low","type":"类型","targetId":"对象ID","title":"问题","detail":"依据","suggestion":"修复建议"}]}
-项目：${JSON.stringify(project)}
-场次：${JSON.stringify(scenes)}
-分镜：${JSON.stringify(groups)}
-资产：${JSON.stringify(assets)}`;
-  const data = parseAIJson(await callAI(FILM_SYSTEM, prompt, { json: true }));
+项目：${JSON.stringify({ id:project?.id, name:project?.name, styleLock:project?.data?.styleLock })}
+场次：${JSON.stringify(compactScenes)}
+分镜：${JSON.stringify(compactGroups)}
+资产：${JSON.stringify(compactAssets)}`;
+  const data = await callAIJson(FILM_SYSTEM, prompt, {
+    reasoningEffort:'low', maxTokens:10000, timeoutMs:210000, retryNetwork:false
+  });
   await Store.put({
     id: `analysis_${projectId}_quality_audit`, projectId, kind: 'analysis',
     subtype: 'quality_audit', name: '质量与连续性检查', status: 'ai_draft',
