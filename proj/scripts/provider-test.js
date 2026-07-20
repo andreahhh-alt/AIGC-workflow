@@ -55,9 +55,9 @@ const {
   assert.equal(captured.url, 'https://api.moonshot.cn/v1/chat/completions');
   assert.equal(captured.options.headers.authorization, 'Bearer test-moonshot-key');
   assert.equal(captured.body.model, 'kimi-k3');
-  assert.equal(captured.body.reasoning_effort, 'max');
+  assert.equal(captured.body.reasoning_effort, 'medium');
   assert.equal(captured.body.stream, true);
-  assert.equal(captured.body.max_completion_tokens, 32768);
+  assert.equal(captured.body.max_completion_tokens, 16000);
   assert.deepEqual(captured.body.response_format, { type: 'json_object' });
   assert.equal(captured.body.max_tokens, undefined);
   assert.deepEqual(captured.body.messages, [

@@ -551,8 +551,8 @@ async function callAI(system, user, options = {}) {
   };
   if (currentProvider === 'kimi' && currentModel === 'kimi-k3') {
     requestBody.stream = true;
-    requestBody.max_completion_tokens = options.json ? 32768 : 12000;
-    requestBody.reasoning_effort = 'max';
+    requestBody.max_completion_tokens = options.json ? 16000 : 10000;
+    requestBody.reasoning_effort = options.reasoningEffort || (options.json ? 'medium' : 'high');
     if (options.json) requestBody.response_format = { type: 'json_object' };
   } else {
     requestBody.max_tokens = options.json ? 12000 : 6000;
@@ -566,7 +566,8 @@ async function callAI(system, user, options = {}) {
       response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
+        signal: AbortSignal.timeout(240000)
       });
     } catch (error) {
       if (attempt === 0) {
