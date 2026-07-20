@@ -1258,10 +1258,13 @@ function parseScriptSceneBlocks(text, sourceName = '剧本') {
 }
 
 function filterSceneBlocks(blocks, scope) {
-  const range = String(scope || '').match(/(\d+)\s*[-—至到]\s*(\d+)/u);
-  if (!range) return blocks;
-  const start = Number(range[1]);
-  const end = Number(range[2]);
+  const requested = String(scope || '').trim();
+  if (!requested) return blocks;
+  const range = requested.match(/(\d+(?:\.\d+)?)\s*[-—至到]\s*(\d+(?:\.\d+)?)/u);
+  const single = requested.match(/^(?:第\s*)?场?\s*(\d+(?:\.\d+)?)\s*(?:场)?$/u);
+  if (!range && !single) return blocks;
+  const start = Number(range?.[1] || single?.[1]);
+  const end = Number(range?.[2] || single?.[1]);
   return blocks.filter(block => {
     const number = Number.parseFloat(block.sceneNo);
     return Number.isFinite(number) && number >= start && number <= end;
@@ -2154,6 +2157,7 @@ module.exports = {
   normalizeSceneData,
   linkAnalysisData,
   parseScriptSceneBlocks,
+  filterSceneBlocks,
   canonicalSceneKey,
   stableId,
   provider,
