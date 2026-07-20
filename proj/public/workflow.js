@@ -348,6 +348,83 @@ function storyNodeDetails(node) {
     : `<p>${escapeHtml(node.description || '')}</p>`;
 }
 
+function knowledgeChartKind(type) {
+  if (type === 'relationships') return 'network';
+  if (type === 'worldbuilding') return 'mindmap';
+  if (type === 'logic_audit') return 'fishbone';
+  if (type === 'emotional_arc') return 'emotion';
+  if (type === 'narrative_structure') return 'beatboard';
+  if (type === 'foreshadowing') return 'causal';
+  if (type === 'reveal_order') return 'dualtrack';
+  return 'timeline';
+}
+
+const CHART_KIND_NAMES = {
+  network:'人物关系网络', mindmap:'世界观思维导图', fishbone:'剧情逻辑鱼骨图',
+  emotion:'多轨情绪曲线', beatboard:'幕与序列节拍板', causal:'伏笔—回收因果图',
+  dualtrack:'观众/角色双轨揭示图', timeline:'多轨剧情时间线'
+};
+
+function renderSceneRefs(node) {
+  const refs = Array.isArray(node.sceneRefs) ? node.sceneRefs : [];
+  return `<div class="scene-ref-list">${refs.length ? refs.map(ref => ref.sceneId
+    ? `<button data-scene-link="${escapeHtml(ref.sceneId)}">场${escapeHtml(ref.sceneNo)}${ref.role ? ` · ${escapeHtml(ref.role)}` : ''} →</button>`
+    : `<span class="scene-ref unresolved">场${escapeHtml(ref.sceneNo || '—')} · 待链接</span>`
+  ).join('') : '<span class="scene-ref unresolved">未关联场次</span>'}</div>`;
+}
+
+function renderAdaptiveKnowledge(analysis, analyses, nodes, edges) {
+  const kind = knowledgeChartKind(analysis.subtype);
+  const nodeById = new Map(nodes.map(node => [String(node.id),node]));
+  const cards = nodes.map((node,index) => `<article class="adaptive-node">
+    <small>${String(index + 1).padStart(2,'0')} · ${escapeHtml(node.category || node.lane || node.eventType || '节点')}</small>
+    <h3>${escapeHtml(node.label || node.name || node.id || '未命名')}</h3>
+    ${storyNodeDetails(node)}${renderSceneRefs(node)}
+  </article>`).join('');
+  let visual = '';
+  if (kind === 'network') {
+    visual = `<div class="relationship-network">
+      <div class="network-people">${cards}</div>
+      <div class="relationship-ledger">${edges.map(edge => `<article>
+        <b>${escapeHtml(nodeById.get(String(edge.from))?.label || edge.from)}</b>
+        <span>${escapeHtml(edge.label || edge.type || '关系')} →</span>
+        <b>${escapeHtml(nodeById.get(String(edge.to))?.label || edge.to)}</b>
+        ${edge.evidence ? `<small>${escapeHtml(edge.evidence)}</small>` : ''}
+      </article>`).join('') || '<p class="empty-state">尚无有效人物关系；重新生成时会触发质量修复。</p>'}</div>
+    </div>`;
+  } else if (kind === 'mindmap') {
+    const root = analysis.data?.rootLabel || analysis.name;
+    const categories = [...new Set(nodes.map(node => node.category || node.lane || '世界规则'))];
+    visual = `<div class="mind-map"><div class="mind-root">${escapeHtml(root)}</div><div class="mind-branches">${categories.map(category =>
+      `<section><h3>${escapeHtml(category)}</h3>${nodes.filter(node => (node.category || node.lane || '世界规则') === category).map(node =>
+        `<article><b>${escapeHtml(node.label || node.id)}</b><p>${escapeHtml(node.description || '')}</p>${renderSceneRefs(node)}</article>`
+      ).join('')}</section>`).join('')}</div></div>`;
+  } else if (kind === 'fishbone') {
+    const categories = [...new Set(nodes.map(node => node.category || node.lane || '待核查'))];
+    visual = `<div class="fishbone-map"><div class="fishbone-spine"><b>剧情逻辑可信度</b></div><div class="fishbone-bones">${categories.map((category,index) =>
+      `<section class="${index % 2 ? 'down' : 'up'}"><h3>${escapeHtml(category)}</h3>${nodes.filter(node => (node.category || node.lane || '待核查') === category).map(node =>
+        `<article><b>${escapeHtml(node.label || node.id)}</b><p>${escapeHtml(node.description || '')}</p>${renderSceneRefs(node)}</article>`
+      ).join('')}</section>`).join('')}</div></div>`;
+  } else if (kind === 'emotion') {
+    const ordered = [...nodes].sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
+    const points = ordered.map((node,index) => `${8 + index * (84 / Math.max(ordered.length - 1,1))},${88 - Math.max(5,Math.min(95,Number(node.intensity ?? 50))) * .72}`).join(' ');
+    visual = `<div class="emotion-map"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points="${points}"/></svg><div class="emotion-events">${ordered.map(node =>
+      `<article><b>${escapeHtml(node.label || node.id)}</b><span>强度 ${escapeHtml(node.intensity ?? '—')}</span>${renderSceneRefs(node)}</article>`
+    ).join('')}</div></div>`;
+  } else {
+    const groups = [...new Set(nodes.map(node => node.act || node.phase || node.lane || node.category || '核心结构'))];
+    visual = `<div class="adaptive-board ${kind}">${groups.map(group => `<section><h3>${escapeHtml(group)}</h3>${nodes.filter(node => (node.act || node.phase || node.lane || node.category || '核心结构') === group).map(node =>
+      `<article><small>${escapeHtml(node.eventType || '')}</small><b>${escapeHtml(node.label || node.id)}</b><p>${escapeHtml(node.description || '')}</p>${renderSceneRefs(node)}</article>`
+    ).join('')}</section>`).join('')}</div>`;
+  }
+  return `<div class="panel-head graph-head">
+    <div><span class="kicker">ADAPTIVE STORY MAP</span><h2>${escapeHtml(analysis.name)}</h2><p>${escapeHtml(analysis.data?.summary || '')}</p></div>
+    <div class="graph-switcher">${analyses.map(item => `<button class="chip ${item.subtype === analysis.subtype ? 'active' : ''}" data-open-analysis="${item.subtype}">${escapeHtml(item.name)}</button>`).join('')}</div>
+  </div>
+  <div class="graph-stats"><span>${escapeHtml(CHART_KIND_NAMES[kind])}</span><span>${nodes.length} 个节点</span><span>${edges.length} 条关系</span><span>${analysis.data?.linkedSceneCount || 0} 个已链接场次</span></div>
+  <div class="adaptive-graph kind-${kind}">${nodes.length ? visual : '<div class="empty-state">没有达到展示质量的节点，请重新生成。</div>'}</div>`;
+}
+
 function renderKnowledgeDetail() {
   const analyses = state.data.analyses.filter(item => item.subtype !== 'quality_audit');
   if (!state.selectedAnalysisType || !analyses.some(item => item.subtype === state.selectedAnalysisType)) {
@@ -363,6 +440,10 @@ function renderKnowledgeDetail() {
   const detail = $('#knowledge-detail');
   const previousCanvas = detail.querySelector('.story-map-canvas');
   if (previousCanvas) state.storyMapScroll[analysis.subtype] = previousCanvas.scrollLeft;
+  if (knowledgeChartKind(analysis.subtype) !== 'timeline') {
+    detail.innerHTML = renderAdaptiveKnowledge(analysis, analyses, nodes, edges);
+    return;
+  }
   const preparedNodes = nodes.map((node,index) => ({
     node,
     index,
@@ -577,8 +658,8 @@ function renderStoryboard() {
         <select id="scene-primary-line-${escapeHtml(scene.id)}" data-scene-primary-line="${escapeHtml(scene.id)}">${lineOptions(scene.data?.primaryLine || 'other')}</select>
         <small>${(scene.data?.secondaryLines || []).length ? `同时属于：${scene.data.secondaryLines.map(line => escapeHtml(STORY_LINE_NAMES[line] || line)).join('、')}` : '可在这里直接选择主要线路'}</small>
       </div>
-      <div class="scene-semantic-field"><span>叙事视角（POV）</span><strong>${escapeHtml(scene.data?.povCharacter || '待AI分析')}</strong><small>本场主要跟随谁的感知与信息，不代表此人必须始终在画面中。</small></div>
-      <div class="scene-semantic-field"><span>实际出场人物</span><strong>${escapeHtml((scene.data?.characters || []).join(' · ') || '待AI提取')}</strong><small>本场真实出现或参与行动的人物；出场不等于该场属于其单线。</small></div>
+      <label class="scene-semantic-field"><span>叙事视角（POV）</span><input data-scene-pov="${escapeHtml(scene.id)}" value="${escapeHtml(scene.data?.povCharacter || '')}" placeholder="输入主要叙事视角人物"><small>可直接输入；指本场主要跟随谁的感知与信息。</small></label>
+      <label class="scene-semantic-field"><span>实际出场人物</span><input data-scene-characters="${escapeHtml(scene.id)}" value="${escapeHtml((scene.data?.characters || []).join('、'))}" placeholder="用顿号或逗号分隔"><small>可直接输入；只记录真实出现或参与行动的人物。</small></label>
       <div><span>稳定坐标</span><strong class="mono">${escapeHtml(scene.data?.canonicalKey || scene.id)}</strong></div>
     </div>
     ${events.length ? `<div class="scene-events"><span>本场剧情事件</span>${events.map(event => `<i>${escapeHtml(event.label)}<small>${escapeHtml(event.type || '')}</small></i>`).join('')}</div>` : ''}
@@ -594,7 +675,7 @@ function renderStoryboard() {
   if (groups.length && !groups.some(group => group.id === state.selectedShotGroupId)) {
     state.selectedShotGroupId = groups[0].id;
   }
-  $('#shot-list').innerHTML = groups.length ? groups.map(renderShotCard).join('') : '<div class="empty-state">本场还没有分镜组与15秒分镜。</div>';
+  $('#shot-list').innerHTML = groups.length ? groups.map(renderShotCard).join('') : `<div class="empty-state shot-empty-action"><p>本场还没有分镜组与15秒分镜。</p><button class="primary-button" data-ai-split-current="${escapeHtml(scene.data?.displaySceneNo || scene.data?.sceneNo || '')}">AI拆分本场分镜组</button></div>`;
   renderShotInspector();
   renderSceneRail();
   renderContextCommand();
@@ -627,7 +708,7 @@ function renderStructuredPrompt(group) {
   const prompts = Array.isArray(group.data?.shotPrompts) ? group.data.shotPrompts : [];
   if (!prompts.length) {
     return group.data?.promptZh
-      ? `<details class="prompt-legacy"><summary>旧版提示词（重新生成后将升级为结构格式）</summary><pre>${escapeHtml(group.data.promptZh)}</pre></details>`
+      ? renderLegacyPrompt(group.data.promptZh)
       : '<p class="muted-copy">尚未生成。生成后会按“镜头参数、15秒时间轴、关键帧、约束、音效、双语全文”分区显示。</p>';
   }
   return `<div class="structured-prompt-list">${shots.map((shot,index) => {
@@ -661,6 +742,29 @@ function renderStructuredPrompt(group) {
       <details><summary>English Prompt</summary><pre>${escapeHtml(prompt.promptEn || '')}</pre></details>
     </article>`;
   }).join('')}</div>`;
+}
+
+function renderLegacyPrompt(text) {
+  const source = String(text || '').trim();
+  const tokens = [...source.matchAll(/(?:【([^】]+)】|\[([^\]]+)\])/g)];
+  const sections = [];
+  if (tokens.length) {
+    tokens.forEach((token,index) => {
+      const start = token.index + token[0].length;
+      const end = tokens[index + 1]?.index ?? source.length;
+      const body = source.slice(start,end).replace(/^[：:\s]+/u,'').trim();
+      if (body) sections.push({ title:(token[1] || token[2] || '提示词').trim(), body });
+    });
+  }
+  if (!sections.length) {
+    source.split(/\n{2,}/u).filter(Boolean).forEach((body,index) =>
+      sections.push({ title:index ? `制作要求 ${index + 1}` : '画面与动作', body:body.trim() })
+    );
+  }
+  return `<div class="legacy-prompt-grid">
+    <div class="legacy-upgrade-note"><b>已将旧提示词自动整理为结构区块</b><span>再次生成可升级为完整15秒时间轴与关键帧字段。</span></div>
+    ${sections.map(section => `<section><h4>${escapeHtml(section.title)}</h4><p>${escapeHtml(section.body)}</p></section>`).join('')}
+  </div>`;
 }
 
 function renderShotInspector() {
@@ -1205,8 +1309,17 @@ function bindEvents() {
   $('#scene-detail').addEventListener('change',event => {
     const select = event.target.closest('[data-scene-primary-line]');
     if (select) updateScenePrimaryLine(select.dataset.scenePrimaryLine,select.value);
+    const pov = event.target.closest('[data-scene-pov]');
+    if (pov) updateSceneSemantic(pov.dataset.scenePov,{ povCharacter:pov.value.trim(), povCharacterSource:'manual' });
+    const characters = event.target.closest('[data-scene-characters]');
+    if (characters) updateSceneSemantic(characters.dataset.sceneCharacters,{
+      characters:characters.value.split(/[、,，;；]/u).map(value => value.trim()).filter(Boolean),
+      charactersSource:'manual'
+    });
   });
   $('#shot-list').addEventListener('click',event => {
+    const split = event.target.closest('[data-ai-split-current]');
+    if (split) return runAI('scenes',[],{range:`场${split.dataset.aiSplitCurrent}`},`正在拆分场${split.dataset.aiSplitCurrent}的分镜组`);
     const shot = event.target.closest('[data-select-shot]');
     if (shot) return selectShot(shot.dataset.selectShot);
     const promptButton = event.target.closest('[data-prompt]');
@@ -1338,6 +1451,18 @@ async function updateScenePrimaryLine(sceneId, primary) {
     });
     await bootstrap(true);
     toast(`场次已设为${STORY_LINE_NAMES[primary]}，图谱与分镜筛选会使用这一人工选择`);
+  } catch (error) { toast(error.message,'error'); }
+}
+
+async function updateSceneSemantic(sceneId, data) {
+  try {
+    await api(`/api/records/${encodeURIComponent(sceneId)}`,{
+      method:'PATCH',
+      body:JSON.stringify({ status:'review', data })
+    });
+    const scene = state.data.scenes.find(item => item.id === sceneId);
+    if (scene) scene.data = { ...scene.data, ...data };
+    toast('场次信息已保存，后续AI拆分会保留人工编辑');
   } catch (error) { toast(error.message,'error'); }
 }
 

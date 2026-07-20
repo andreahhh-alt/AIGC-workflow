@@ -1002,6 +1002,34 @@ async function finishJob(job, status, patch) {
   await Store.put(job);
 }
 
+const KNOWLEDGE_SPECS = {
+  timeline_master:{ chartType:'timeline', minNodes:10, minEdges:7, instruction:'全剧综合多轨时间线；按故事真实时间排序，标出并行线、交汇、跳时和关键转折。' },
+  timeline_male:{ chartType:'timeline', minNodes:7, minEdges:5, instruction:'男主单线时间线；只收录男主主导目标、行动、阻力、选择、代价与弧光节点。' },
+  timeline_female:{ chartType:'timeline', minNodes:7, minEdges:5, instruction:'女主单线时间线；只收录女主主导目标、行动、阻力、选择、代价与弧光节点。' },
+  supporting_arcs:{ chartType:'timeline', minNodes:7, minEdges:4, instruction:'配角多轨时间线；按人物分lane，标出各自功能、转折以及与主线的汇合。' },
+  relationships:{ chartType:'network', minNodes:6, minEdges:8, instruction:'人物关系网络；节点只能是人物，边必须写明关系性质、方向、阶段变化、冲突/利益和剧本证据。description不可嵌入JSON。' },
+  worldbuilding:{ chartType:'mindmap', minNodes:9, minEdges:6, instruction:'世界观思维导图；按制度、空间、技术、社会结构、规则与禁忌分类，category必填，边表达隶属或影响。' },
+  emotional_arc:{ chartType:'emotion', minNodes:8, minEdges:5, instruction:'多轨情绪曲线；节点填写0-100的intensity、人物/关系lane、触发事件与变化方向。' },
+  narrative_structure:{ chartType:'beatboard', minNodes:9, minEdges:6, instruction:'幕与序列节拍板；节点填写act与phase，覆盖开端、诱因、转折、中点、危机、高潮、结局。' },
+  foreshadowing:{ chartType:'causal', minNodes:8, minEdges:6, instruction:'伏笔—发展—回收因果图；每条线索至少含setup与payoff，边写清回收关系。' },
+  reveal_order:{ chartType:'dualtrack', minNodes:8, minEdges:5, instruction:'观众/角色双轨揭示图；lane只能清楚区分观众已知、角色已知或双方，并按揭示顺序排列。' },
+  character_arcs:{ chartType:'timeline', minNodes:8, minEdges:5, instruction:'主要人物弧光对照时间线；按人物分lane，写清起点、关键选择、代价与终点。' },
+  logic_audit:{ chartType:'fishbone', minNodes:6, minEdges:0, instruction:'剧情逻辑鱼骨图；category使用时间连续性、人物动机、因果链、世界规则、信息连续性等，节点写问题、证据、严重度与修改建议。' }
+};
+
+function knowledgeQuality(target, item) {
+  const spec = KNOWLEDGE_SPECS[target] || { minNodes:6, minEdges:3 };
+  const nodes = Array.isArray(item?.nodes) ? item.nodes : [];
+  const edges = Array.isArray(item?.edges) ? item.edges : [];
+  const ids = new Set(nodes.map(node => String(node.id || '')));
+  const validEdges = edges.filter(edge => ids.has(String(edge.from)) && ids.has(String(edge.to)));
+  const problems = [];
+  if (nodes.length < spec.minNodes) problems.push(`节点仅${nodes.length}个，至少需要${spec.minNodes}个`);
+  if (validEdges.length < spec.minEdges) problems.push(`有效关系仅${validEdges.length}条，至少需要${spec.minEdges}条`);
+  if (target === 'relationships' && nodes.some(node => /\{.*\}/s.test(String(node.description || '')))) problems.push('人物说明中嵌入了JSON');
+  return { ok: !problems.length, problems, validEdges };
+}
+
 async function runKnowledgeJob(projectId, targets, context) {
   const scenes = await Store.list(projectId, 'scene');
   const sceneRegistry = scenes.map(scene => ({
@@ -1012,12 +1040,14 @@ async function runKnowledgeJob(projectId, targets, context) {
     secondaryLines: scene.data?.secondaryLines
   }));
   const outcomes = await mapWithConcurrency(targets, 2, async (target, targetIndex) => {
+    const spec = KNOWLEDGE_SPECS[target] || { chartType:'timeline', minNodes:6, minEdges:3, instruction:'影视知识结构图。' };
     const prompt = `只生成一个影视项目知识分析，分析类型必须为：${target}。
+推荐图形：${spec.chartType}。分析要求：${spec.instruction}
 输出严格JSON：
-{"result":{"type":"${target}","title":"标题","summary":"摘要","nodes":[{"id":"稳定ID","label":"事件短标题","timeLabel":"年份/季节/阶段/场次","lane":"主线/关系与信物/制度与外部压力/其他适合本分析的轨道","eventType":"goal|action|obstacle|choice|reveal|turn|payoff|world","importance":"major|normal|minor","description":"具体说明","goal":"目标","action":"行动","obstacle":"阻力","choice":"选择","cost":"代价","sceneRefs":[{"sceneNo":"12","sceneRef":"12#1","role":"发生/转折/回收"}],"sourceRefs":["文件/场次"]}],"edges":[{"from":"节点ID","to":"节点ID","label":"因果/推动/对照/回收","type":"cause|parallel|conflict|payoff"}],"insights":["洞察"],"confidence":"high|medium|low"}}
+{"result":{"type":"${target}","chartType":"${spec.chartType}","title":"标题","summary":"摘要","rootLabel":"思维导图根节点（仅适用时）","nodes":[{"id":"稳定ID","label":"短标题/人物名","timeLabel":"年份/季节/阶段/场次","order":1,"lane":"人物/轨道","category":"分类","act":"幕","phase":"阶段","intensity":50,"eventType":"goal|action|obstacle|choice|reveal|turn|payoff|world|issue","importance":"major|normal|minor","description":"纯文本具体说明","goal":"目标","action":"行动","obstacle":"阻力","choice":"选择","cost":"代价","severity":"high|medium|low","recommendation":"修改建议","sceneRefs":[{"sceneNo":"12","sceneRef":"12#1","role":"发生/转折/回收"}],"sourceRefs":["文件/场次"]}],"edges":[{"from":"节点ID","to":"节点ID","label":"关系/因果/推动/对照/回收","type":"relationship|cause|parallel|conflict|payoff|contains","evidence":"剧本证据"}],"insights":["洞察"],"confidence":"high|medium|low"}}
 要求：
 1. 所有能定位到剧本场次的节点必须填写sceneRefs；使用索引给出的sceneRef，不得编造sceneId；
-2. 时间线和人物线按故事/剧本顺序输出；资料充分时给出12–24个关键节点，不要把多个重要场次压成一个泛泛节点；
+2. 节点不少于${spec.minNodes}个，有效边不少于${spec.minEdges}条；资料充分时给出12–24个关键节点，不要把多个重要场次压成一个泛泛节点；
 3. 时间线必须组织为2–4条有意义的lane，突出并行线、交汇、长时段空白、关键转折和回收；
 4. 人物线必须具体填写目标、行动、阻力、选择、代价；没有依据的字段留空，不得杜撰；
 5. edges必须引用真实节点ID，用来表达跨节点因果和回收；
@@ -1027,12 +1057,26 @@ ${JSON.stringify(sceneRegistry)}
 资料如下：
 ${context}`;
     try {
-      const data = parseAIJson(await callAI(FILM_SYSTEM, prompt, { json: true }));
-      const item = data.result || (Array.isArray(data.results) ? data.results[0] : null);
+      let data = parseAIJson(await callAI(FILM_SYSTEM, prompt, { json: true }));
+      let item = data.result || (Array.isArray(data.results) ? data.results[0] : null);
       if (!item || !Array.isArray(item.nodes) || !item.nodes.length) {
         throw new Error('没有返回可用的结构化节点');
       }
+      let quality = knowledgeQuality(target, item);
+      if (!quality.ok) {
+        const repairPrompt = `${prompt}
+上一次结果未达到可视化质量：${quality.problems.join('；')}。
+请完整重做，不要解释。尤其不能只返回一个节点，也不能把JSON对象塞进description字符串。
+上一次结果：
+${JSON.stringify(item)}`;
+        data = parseAIJson(await callAI(FILM_SYSTEM, repairPrompt, { json: true }));
+        item = data.result || (Array.isArray(data.results) ? data.results[0] : null);
+        quality = knowledgeQuality(target, item);
+      }
+      if (!quality.ok) throw new Error(`结构质量不足：${quality.problems.join('；')}`);
       item.type = target;
+      item.chartType = spec.chartType;
+      item.edges = quality.validEdges;
       const linked = linkAnalysisData(item, scenes);
       await Store.put({
         id: `analysis_${projectId}_${target}`,
@@ -1248,6 +1292,14 @@ ${JSON.stringify(sourceScenes)}`;
     normalized.sceneId = sceneId;
     usedSceneIds.add(sceneId);
     const existingScene = await Store.get(sceneId);
+    if (existingScene?.data?.povCharacterSource === 'manual') {
+      normalized.povCharacter = existingScene.data.povCharacter;
+      normalized.povCharacterSource = 'manual';
+    }
+    if (existingScene?.data?.charactersSource === 'manual') {
+      normalized.characters = existingScene.data.characters;
+      normalized.charactersSource = 'manual';
+    }
     if (existingScene?.status === 'locked') {
       normalized = { ...normalized, ...existingScene.data, sceneId };
       order += 1;
