@@ -74,6 +74,8 @@ const jsonRequest = async (url, options = {}) => {
       || !pageHtml.includes('shot-inspector')
       || !pageHtml.includes('asset-detail-dialog')
       || !workflowJs.includes('data-scene-primary-line')
+      || !workflowJs.includes('downloadColorCard')
+      || !workflowJs.includes('structured-prompt-card')
       || workflowJs.includes('data-edit-lines')
       || pageHtml.includes('href="/legacy"')
       || !Array.isArray(bootstrap.comments)
@@ -220,6 +222,7 @@ const jsonRequest = async (url, options = {}) => {
       || !colorCardResponse.headers.get('content-disposition')?.includes('attachment')
       || !colorCardSvg.includes('<svg')
       || !colorCardSvg.includes('#6EC6CC')
+      || !colorCardSvg.includes('1个15秒分镜共用')
       || approved.status !== 'approved'
       || !assetImageUploadResponse.ok
       || assetWithImage.data?.hasImage !== true
@@ -228,6 +231,8 @@ const jsonRequest = async (url, options = {}) => {
       || !assetDownloadResponse.headers.get('content-disposition')?.includes('attachment')
       || inheritedGroup?.data?.primaryLine !== 'female'
       || !inheritedGroup?.data?.lineRefs?.includes('romance')
+      || inheritedGroup?.data?.shots?.length !== 1
+      || inheritedGroup?.data?.shots?.[0]?.duration !== 15
       || updatedManualScene.data?.primaryLineSource !== 'manual'
       || resolvedComment.data?.timecode !== '00:06'
       || resolvedComment.data?.resolved !== true
