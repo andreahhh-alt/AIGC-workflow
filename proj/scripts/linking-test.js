@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { normalizeSceneData, linkAnalysisData } = require('../server');
+const { normalizeSceneData, linkAnalysisData, mergeSceneLineMembership } = require('../server');
 
 const project = { data: { scriptVersion: 'test-v1' } };
 const scene21AData = normalizeSceneData('test-project', {
@@ -43,10 +43,35 @@ assert.strictEqual(linked.nodes[1].sceneRefs[0].ambiguous, true);
 assert.strictEqual(linked.nodes[1].sceneRefs[0].candidateSceneIds.length, 2);
 assert.strictEqual(linked.nodes[2].sceneRefs[0].sceneId, scene14Data.sceneId);
 
+const femaleFromGraph = mergeSceneLineMembership({
+  primaryLine: 'other',
+  secondaryLines: []
+}, ['female']);
+assert.strictEqual(femaleFromGraph.primaryLine, 'female');
+assert.deepStrictEqual(femaleFromGraph.analysisLineMemberships, ['female']);
+
+const ensembleFromGraphs = mergeSceneLineMembership({
+  primaryLine: 'other',
+  secondaryLines: []
+}, ['male', 'female']);
+assert.strictEqual(ensembleFromGraphs.primaryLine, 'ensemble');
+assert(ensembleFromGraphs.secondaryLines.includes('male'));
+assert(ensembleFromGraphs.secondaryLines.includes('female'));
+
+const manualChoicePreserved = mergeSceneLineMembership({
+  primaryLine: 'male',
+  primaryLineSource: 'manual',
+  secondaryLines: []
+}, ['female']);
+assert.strictEqual(manualChoicePreserved.primaryLine, 'male');
+assert(manualChoicePreserved.secondaryLines.includes('female'));
+
 console.log(JSON.stringify({
   ok: true,
   stableIds: 2,
   explicitLinkResolved: true,
   ambiguousLinkBlocked: true,
-  chineseSceneReferenceResolved: true
+  chineseSceneReferenceResolved: true,
+  graphLineMembershipSynced: true,
+  manualLineChoicePreserved: true
 }));

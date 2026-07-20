@@ -23,12 +23,12 @@ const STORY_LINES = [
 const STORY_LINE_NAMES = Object.fromEntries(STORY_LINES);
 const ACTION_NAMES = {
   knowledge:'知识图谱分析', assets:'资产提取', scenes:'场次与15秒分镜拆分',
-  prompt:'分镜提示词生成', audit:'质量与连续性检查'
+  prompt:'分镜提示词生成', asset_prompt:'资产提示词生成', audit:'质量与连续性检查'
 };
 const STATUS_NAMES = {
   ai_draft:'AI草稿', review:'待确认', approved:'已确认', locked:'已锁定',
   stale:'已过期', archived:'已归档', running:'生成中', completed:'已完成',
-  failed:'失败', active:'进行中', parsed:'已解析', stored:'已保存'
+  failed:'失败', active:'进行中', parsed:'已解析', stored:'已保存', indexed:'已索引'
 };
 
 const initialParams = new URLSearchParams(location.search);
@@ -41,6 +41,7 @@ const state = {
   sceneLineFilter: initialParams.get('line') || 'all',
   selectedSceneId: initialParams.get('scene') || '',
   selectedShotGroupId: initialParams.get('group') || '',
+  selectedAssetId: '',
   selectedAnalysisType: initialParams.get('graph') || '',
   selectedKnowledge: new Set(),
   pendingFiles: [],
@@ -122,6 +123,7 @@ function refreshAfterJobUpdate() {
   renderReview();
   if (state.view === 'knowledge') renderKnowledge();
   if (state.view === 'assets') renderAssets();
+  if ($('#asset-detail-dialog')?.open && state.selectedAssetId) renderAssetDetail();
   if (state.view === 'storyboard') renderStoryboard();
   renderSceneRail();
   renderContextCommand();
@@ -213,6 +215,13 @@ function lineTag(line, primary = false) {
 function recordSceneIds(record) {
   const refs = Array.isArray(record?.data?.sceneRefs) ? record.data.sceneRefs : [];
   return [...new Set(refs.map(ref => typeof ref === 'string' ? ref : ref.sceneId).filter(Boolean))];
+}
+
+function lineOptions(selected) {
+  return STORY_LINES
+    .filter(([line]) => line !== 'all')
+    .map(([line, label]) => `<option value="${escapeHtml(line)}" ${line === selected ? 'selected' : ''}>${escapeHtml(label)}</option>`)
+    .join('');
 }
 
 function renderProjectSwitcher() {
@@ -410,8 +419,10 @@ function renderAssets() {
   $('#asset-grid').innerHTML = assets.length ? assets.map((asset,index) => {
     const sceneIds = recordSceneIds(asset);
     const sceneLabels = sceneIds.map(id => state.data.scenes.find(scene => scene.id === id)?.data?.displaySceneNo).filter(Boolean);
-    const image = asset.data?.imageUrl || asset.data?.thumbnailUrl || '';
-    return `<article class="asset-card asset-${escapeHtml(asset.subtype)}" data-asset-scenes="${escapeHtml(sceneIds.join(','))}">
+    const image = asset.data?.hasImage
+      ? `/api/assets/${encodeURIComponent(asset.id)}/image?v=${encodeURIComponent(asset.data.imageUpdatedAt || '')}`
+      : (asset.data?.imageUrl || asset.data?.thumbnailUrl || '');
+    return `<article class="asset-card asset-${escapeHtml(asset.subtype)}" data-open-asset="${escapeHtml(asset.id)}" data-asset-scenes="${escapeHtml(sceneIds.join(','))}" tabindex="0" role="button">
     <div class="asset-visual ${image ? 'has-image' : ''}" ${image ? `style="background-image:url('${escapeHtml(image)}')"` : ''}>
       <span>${escapeHtml(asset.subtype.toUpperCase())}</span><b>${String(index + 1).padStart(2,'0')}</b>
       ${!image ? `<em>${escapeHtml(asset.name.slice(0,2))}</em>` : ''}
@@ -420,19 +431,89 @@ function renderAssets() {
       <h3>${escapeHtml(asset.name)}</h3>
       <p>${escapeHtml(asset.data?.description || '等待补充资产描述与视觉锚点。')}</p>
       <div class="asset-scenes">${sceneLabels.length ? sceneLabels.map(label => `<span>场${escapeHtml(label)}</span>`).join('') : '<span>尚未绑定场次</span>'}</div>
-      <footer>${statusTag(asset.status)}<button class="text-button" data-approve="${asset.id}">${asset.status === 'locked' ? '已锁定' : '确认并锁定'}</button></footer>
+      <footer>${statusTag(asset.status)}<span class="asset-open-label">查看资产 →</span></footer>
     </div>
   </article>`;
   }).join('') : '<div class="empty-state">还没有资产。可以选择角色、场景、道具、风格或声音类别让AI提取，也可以人工新建。</div>';
 }
 
+function renderAssetDetail() {
+  const host = $('#asset-detail-content');
+  const asset = state.data.assets.find(item => item.id === state.selectedAssetId);
+  if (!host || !asset) return;
+  const sceneIds = recordSceneIds(asset);
+  const image = asset.data?.hasImage
+    ? `/api/assets/${encodeURIComponent(asset.id)}/image?v=${encodeURIComponent(asset.data.imageUpdatedAt || '')}`
+    : (asset.data?.imageUrl || asset.data?.thumbnailUrl || '');
+  const comments = state.data.comments.filter(item => item.subtype === 'asset_feedback' && item.data?.assetId === asset.id);
+  host.innerHTML = `
+    <div class="dialog-head">
+      <div><span class="kicker">${escapeHtml(asset.subtype.toUpperCase())} ASSET</span><h2>${escapeHtml(asset.name)}</h2></div>
+      <button type="button" data-close-asset aria-label="关闭">×</button>
+    </div>
+    <div class="asset-detail-layout">
+      <section class="asset-detail-media">
+        <div class="asset-detail-preview ${image ? 'has-image' : ''}" ${image ? `style="background-image:url('${escapeHtml(image)}')"` : ''}>
+          ${image ? '' : `<span>${escapeHtml(asset.name.slice(0,2))}</span><small>尚未上传资产图</small>`}
+        </div>
+        <div class="asset-media-actions">
+          <button type="button" class="secondary-button" data-upload-asset-image>${image ? '替换图片' : '上传图片'}</button>
+          ${asset.data?.hasImage ? `<a class="ghost-button" href="/api/assets/${encodeURIComponent(asset.id)}/image?download=1">下载原图</a>` : ''}
+        </div>
+        <p>${escapeHtml(asset.data?.description || '等待补充资产描述与视觉锚点。')}</p>
+        <div class="asset-detail-status">${statusTag(asset.status)}<button type="button" class="text-button" data-approve-asset="${escapeHtml(asset.id)}">${asset.status === 'locked' ? '已锁定' : '确认并锁定'}</button></div>
+      </section>
+      <section class="asset-detail-workspace">
+        <article class="asset-work-block">
+          <header><div><span class="kicker">AI PROMPT</span><h3>资产生成提示词</h3></div>
+          <button type="button" class="primary-button" data-generate-asset-prompt="${escapeHtml(asset.id)}">${asset.data?.promptZh ? 'AI重新生成' : 'AI生成提示词'}</button></header>
+          ${asset.data?.promptZh || asset.data?.promptEn ? `
+            <label>中文提示词<textarea readonly>${escapeHtml(asset.data?.promptZh || '')}</textarea></label>
+            <label>English Prompt<textarea readonly>${escapeHtml(asset.data?.promptEn || '')}</textarea></label>
+            ${asset.data?.negativePrompt ? `<label>负面提示词<textarea readonly>${escapeHtml(asset.data.negativePrompt)}</textarea></label>` : ''}
+            <button type="button" class="text-button" data-copy-asset-prompt>复制中文提示词</button>
+          ` : '<div class="asset-empty-note">点击“AI生成提示词”，任务会在后台运行，你仍可继续浏览和编辑。</div>'}
+        </article>
+        <article class="asset-work-block">
+          <header><div><span class="kicker">SCENE LINKS</span><h3>出现的场次</h3></div><button type="button" class="secondary-button" data-save-asset-scenes>保存关联</button></header>
+          <div class="asset-linked-scenes">${sceneIds.length ? sceneIds.map(id => {
+            const scene = state.data.scenes.find(item => item.id === id);
+            return scene ? `<button type="button" data-asset-scene-link="${escapeHtml(id)}">场${escapeHtml(scene.data?.displaySceneNo || scene.data?.sceneNo)} · ${escapeHtml(scene.data?.heading || scene.name)} →</button>` : '';
+          }).join('') : '<span>尚未关联场次</span>'}</div>
+          <div class="asset-scene-picker">${state.data.scenes.map(scene => `
+            <label><input type="checkbox" value="${escapeHtml(scene.id)}" ${sceneIds.includes(scene.id) ? 'checked' : ''}>
+            <span>场${escapeHtml(scene.data?.displaySceneNo || scene.data?.sceneNo)} · ${escapeHtml(scene.data?.heading || scene.name)}</span></label>`).join('')}</div>
+        </article>
+        <article class="asset-work-block">
+          <header><div><span class="kicker">FEEDBACK</span><h3>资产反馈</h3></div></header>
+          <div class="feedback-list">${comments.length ? comments.map(comment => `
+            <article class="${comment.data?.resolved ? 'resolved' : ''}"><div><b>${escapeHtml(comment.data?.role || '美术')}</b><span>${formatTime(comment.createdAt)}</span></div>
+            <p>${escapeHtml(comment.data?.text || '')}</p>${comment.data?.resolved ? '' : `<button type="button" data-resolve-asset-comment="${escapeHtml(comment.id)}">标记已处理</button>`}</article>`).join('') : '<div class="asset-empty-note">暂无反馈。</div>'}</div>
+          <form id="asset-feedback-form"><select name="role"><option>导演</option><option>美术</option><option>制片</option><option>摄影</option></select>
+            <textarea name="text" required placeholder="例如：服装材质需要更旧，保持场15中的磨损位置。"></textarea>
+            <button class="secondary-button" type="submit">提交反馈</button></form>
+        </article>
+      </section>
+    </div>`;
+}
+
+function openAssetDetail(assetId) {
+  state.selectedAssetId = assetId;
+  renderAssetDetail();
+  const dialog = $('#asset-detail-dialog');
+  if (!dialog.open) dialog.showModal();
+}
+
 function renderStoryboard() {
   const scenes = state.data.scenes;
   $('#storyline-filters').innerHTML = STORY_LINES.map(([line,label]) => {
-    const count = line === 'all'
+    const sceneCount = line === 'all'
+      ? scenes.length
+      : scenes.filter(scene => sceneLines(scene).includes(line)).length;
+    const groupCount = line === 'all'
       ? state.data.shotGroups.length
       : state.data.shotGroups.filter(group => (group.data?.lineRefs || []).includes(line)).length;
-    return `<button class="chip ${state.sceneLineFilter === line ? 'active' : ''}" data-line-filter="${line}">${label} · ${count}组</button>`;
+    return `<button class="chip ${state.sceneLineFilter === line ? 'active' : ''}" data-line-filter="${line}">${label} · ${sceneCount}场 / ${groupCount}组</button>`;
   }).join('');
   const filteredScenes = state.sceneLineFilter === 'all'
     ? scenes
@@ -475,11 +556,13 @@ function renderStoryboard() {
       <div><span class="kicker">SCENE ${escapeHtml(scene.data?.displaySceneNo || scene.data?.sceneNo || '')}</span>
         <h2>${escapeHtml(scene.data?.heading || scene.name)}</h2><p>${escapeHtml(scene.data?.summary || '')}</p></div>
       <div class="scene-center-status">${scene.data?.numberingConflict ? '<span class="status stale">编号冲突</span>' : ''}${statusTag(scene.status)}
-        <button class="text-button" data-edit-lines="${scene.id}">编辑线路</button>
         <button class="text-button" data-approve="${scene.id}">确认场次</button></div>
     </div>
     <div class="scene-center-grid">
-      <div><span>剧情线路</span><strong>${sceneLines(scene).map(line => lineTag(line,line === scene.data?.primaryLine)).join('') || '待分类'}</strong></div>
+      <div class="scene-line-editor"><label for="scene-primary-line-${escapeHtml(scene.id)}">剧情线路</label>
+        <select id="scene-primary-line-${escapeHtml(scene.id)}" data-scene-primary-line="${escapeHtml(scene.id)}">${lineOptions(scene.data?.primaryLine || 'other')}</select>
+        <small>${(scene.data?.secondaryLines || []).length ? `同时属于：${scene.data.secondaryLines.map(line => escapeHtml(STORY_LINE_NAMES[line] || line)).join('、')}` : '可在这里直接选择主要线路'}</small>
+      </div>
       <div><span>视角人物</span><strong>${escapeHtml(scene.data?.povCharacter || '待确认')}</strong></div>
       <div><span>出场人物</span><strong>${escapeHtml((scene.data?.characters || []).join(' · ') || '待提取')}</strong></div>
       <div><span>稳定坐标</span><strong class="mono">${escapeHtml(scene.data?.canonicalKey || scene.id)}</strong></div>
@@ -920,8 +1003,15 @@ function bindEvents() {
     } catch (error) { toast(error.message,'error'); }
   });
   $('#asset-grid').addEventListener('click',event => {
-    const button = event.target.closest('[data-approve]');
-    if (button) approveRecord(button.dataset.approve,'locked');
+    const card = event.target.closest('[data-open-asset]');
+    if (card) openAssetDetail(card.dataset.openAsset);
+  });
+  $('#asset-grid').addEventListener('keydown',event => {
+    const card = event.target.closest('[data-open-asset]');
+    if (card && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      openAssetDetail(card.dataset.openAsset);
+    }
   });
   $('#asset-grid').addEventListener('mouseover',event => {
     const card = event.target.closest('[data-asset-scenes]');
@@ -932,6 +1022,88 @@ function bindEvents() {
   $('#asset-grid').addEventListener('mouseout',event => {
     if (event.relatedTarget?.closest?.('[data-asset-scenes]') === event.target.closest('[data-asset-scenes]')) return;
     $$('.rail-scene.related').forEach(button => button.classList.remove('related'));
+  });
+  $('#asset-detail-dialog').addEventListener('click',async event => {
+    if (event.target.closest('[data-close-asset]')) return $('#asset-detail-dialog').close();
+    if (event.target.closest('[data-upload-asset-image]')) return $('#asset-image-input').click();
+    const generate = event.target.closest('[data-generate-asset-prompt]');
+    if (generate) return runAI('asset_prompt',[generate.dataset.generateAssetPrompt],{assetId:generate.dataset.generateAssetPrompt},'正在生成资产提示词');
+    const approve = event.target.closest('[data-approve-asset]');
+    if (approve) {
+      await approveRecord(approve.dataset.approveAsset,'locked');
+      return renderAssetDetail();
+    }
+    const sceneLink = event.target.closest('[data-asset-scene-link]');
+    if (sceneLink) {
+      $('#asset-detail-dialog').close();
+      return jumpToScene(sceneLink.dataset.assetSceneLink);
+    }
+    if (event.target.closest('[data-copy-asset-prompt]')) {
+      const asset = state.data.assets.find(item => item.id === state.selectedAssetId);
+      if (asset?.data?.promptZh) {
+        await navigator.clipboard.writeText(asset.data.promptZh);
+        toast('资产中文提示词已复制');
+      }
+      return;
+    }
+    if (event.target.closest('[data-save-asset-scenes]')) {
+      const sceneIds = [...$('#asset-detail-content').querySelectorAll('.asset-scene-picker input:checked')].map(input => input.value);
+      const sceneRefs = sceneIds.map(id => {
+        const scene = state.data.scenes.find(item => item.id === id);
+        return {
+          sceneId:id,
+          sceneNo:scene?.data?.sceneNo || '',
+          sceneRef:scene?.data?.sceneRef || '',
+          heading:scene?.data?.heading || ''
+        };
+      });
+      try {
+        await api(`/api/records/${encodeURIComponent(state.selectedAssetId)}`,{method:'PATCH',body:JSON.stringify({status:'review',data:{sceneRefs}})});
+        await bootstrap(true);
+        renderAssetDetail();
+        toast('资产场次关联已保存');
+      } catch (error) { toast(error.message,'error'); }
+      return;
+    }
+    const resolve = event.target.closest('[data-resolve-asset-comment]');
+    if (resolve) {
+      try {
+        await api(`/api/records/${encodeURIComponent(resolve.dataset.resolveAssetComment)}`,{method:'PATCH',body:JSON.stringify({status:'approved',data:{resolved:true}})});
+        await bootstrap(true);
+        renderAssetDetail();
+        toast('资产反馈已标记解决');
+      } catch (error) { toast(error.message,'error'); }
+    }
+  });
+  $('#asset-detail-dialog').addEventListener('submit',async event => {
+    if (event.target.id !== 'asset-feedback-form') return;
+    event.preventDefault();
+    const form = new FormData(event.target);
+    try {
+      await api(`/api/projects/${encodeURIComponent(state.projectId)}/records`,{
+        method:'POST',
+        body:JSON.stringify({
+          kind:'comment',subtype:'asset_feedback',name:'资产反馈',status:'review',
+          data:{assetId:state.selectedAssetId,role:form.get('role'),text:form.get('text'),resolved:false}
+        })
+      });
+      await bootstrap(true);
+      renderAssetDetail();
+      toast('资产反馈已添加');
+    } catch (error) { toast(error.message,'error'); }
+  });
+  $('#asset-image-input').addEventListener('change',async event => {
+    const file = event.target.files?.[0];
+    if (!file || !state.selectedAssetId) return;
+    const form = new FormData();
+    form.append('image',file);
+    try {
+      await api(`/api/assets/${encodeURIComponent(state.selectedAssetId)}/image`,{method:'POST',body:form});
+      await bootstrap(true);
+      renderAssetDetail();
+      toast('资产图片已上传');
+    } catch (error) { toast(error.message,'error'); }
+    finally { event.target.value = ''; }
   });
   $('#scene-list').addEventListener('click',event => {
     const button = event.target.closest('[data-scene]');
@@ -960,8 +1132,6 @@ function bindEvents() {
   $('#scene-detail').addEventListener('click',event => {
     const button = event.target.closest('[data-approve]');
     if (button) approveRecord(button.dataset.approve,'approved');
-    const editLines = event.target.closest('[data-edit-lines]');
-    if (editLines) return editSceneLines(editLines.dataset.editLines);
     const analysisLink = event.target.closest('[data-open-analysis]');
     if (analysisLink) {
       state.selectedAnalysisType = analysisLink.dataset.openAnalysis;
@@ -969,6 +1139,10 @@ function bindEvents() {
       renderKnowledgeDetail();
       $('#knowledge-detail').scrollIntoView({ behavior:'smooth', block:'start' });
     }
+  });
+  $('#scene-detail').addEventListener('change',event => {
+    const select = event.target.closest('[data-scene-primary-line]');
+    if (select) updateScenePrimaryLine(select.dataset.scenePrimaryLine,select.value);
   });
   $('#shot-list').addEventListener('click',event => {
     const shot = event.target.closest('[data-select-shot]');
@@ -1088,23 +1262,18 @@ async function approveRecord(id,status) {
   } catch (error) { toast(error.message,'error'); }
 }
 
-async function editSceneLines(sceneId) {
+async function updateScenePrimaryLine(sceneId, primary) {
   const scene = state.data.scenes.find(item => item.id === sceneId);
   if (!scene) return;
-  const allowed = STORY_LINES.filter(([line]) => line !== 'all').map(([line]) => line).join(' / ');
-  const primary = prompt(`主要线路（${allowed}）`,scene.data?.primaryLine || 'other');
-  if (primary === null) return;
   if (!STORY_LINE_NAMES[primary] || primary === 'all') return toast('主要线路值不正确','error');
-  const secondaryInput = prompt('次要线路，可用英文逗号分隔', (scene.data?.secondaryLines || []).join(','));
-  if (secondaryInput === null) return;
-  const secondaryLines = [...new Set(secondaryInput.split(/[,，]/u).map(value => value.trim()).filter(value => value && value !== primary && STORY_LINE_NAMES[value]))];
+  const secondaryLines = (scene.data?.secondaryLines || []).filter(line => line !== primary);
   try {
     await api(`/api/records/${encodeURIComponent(sceneId)}`,{
       method:'PATCH',
-      body:JSON.stringify({ status:'review', data:{ primaryLine:primary, secondaryLines } })
+      body:JSON.stringify({ status:'review', data:{ primaryLine:primary, secondaryLines, primaryLineSource:'manual' } })
     });
     await bootstrap(true);
-    toast('场次线路已更新，等待确认');
+    toast(`场次已设为${STORY_LINE_NAMES[primary]}，图谱与分镜筛选会使用这一人工选择`);
   } catch (error) { toast(error.message,'error'); }
 }
 

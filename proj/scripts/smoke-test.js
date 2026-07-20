@@ -65,12 +65,16 @@ const jsonRequest = async (url, options = {}) => {
     }
     const pageResponse = await fetch(base);
     const pageHtml = await pageResponse.text();
+    const workflowJs = await (await fetch(`${base}/workflow.js`)).text();
     if (
       !pageResponse.ok
       || !pageHtml.includes('storyline-filters')
       || !pageHtml.includes('knowledge-detail')
       || !pageHtml.includes('scene-rail')
       || !pageHtml.includes('shot-inspector')
+      || !pageHtml.includes('asset-detail-dialog')
+      || !workflowJs.includes('data-scene-primary-line')
+      || workflowJs.includes('data-edit-lines')
       || pageHtml.includes('href="/legacy"')
       || !Array.isArray(bootstrap.comments)
     ) {
@@ -113,6 +117,21 @@ const jsonRequest = async (url, options = {}) => {
       method: 'PATCH',
       body: JSON.stringify({ status: 'approved' })
     });
+    const assetImageForm = new FormData();
+    const pngBytes = Uint8Array.from([
+      137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,
+      0,0,0,1,0,0,0,1,8,6,0,0,0,31,21,196,137
+    ]);
+    assetImageForm.append('image', new Blob([pngBytes], { type:'image/png' }), '测试资产图.png');
+    const assetImageUploadResponse = await fetch(`${base}/api/assets/${created.id}/image`, {
+      method:'POST',
+      body:assetImageForm,
+      headers:{'x-forwarded-for':'203.0.113.10'}
+    });
+    const assetWithImage = await assetImageUploadResponse.json();
+    const assetImageResponse = await fetch(`${base}/api/assets/${created.id}/image`);
+    const downloadedAssetImage = new Uint8Array(await assetImageResponse.arrayBuffer());
+    const assetDownloadResponse = await fetch(`${base}/api/assets/${created.id}/image?download=1`);
 
     const manualScene = await jsonRequest(`${base}/api/projects/${projectId}/records`, {
       method: 'POST',
@@ -166,7 +185,7 @@ const jsonRequest = async (url, options = {}) => {
       method: 'PATCH',
       body: JSON.stringify({ status: 'approved', data: { resolved: true } })
     });
-    await jsonRequest(`${base}/api/records/${manualScene.id}`, {
+    const updatedManualScene = await jsonRequest(`${base}/api/records/${manualScene.id}`, {
       method: 'PATCH',
       body: JSON.stringify({
         status: 'review',
@@ -202,8 +221,14 @@ const jsonRequest = async (url, options = {}) => {
       || !colorCardSvg.includes('<svg')
       || !colorCardSvg.includes('#6EC6CC')
       || approved.status !== 'approved'
+      || !assetImageUploadResponse.ok
+      || assetWithImage.data?.hasImage !== true
+      || assetImageResponse.headers.get('content-type') !== 'image/png'
+      || downloadedAssetImage.length !== pngBytes.length
+      || !assetDownloadResponse.headers.get('content-disposition')?.includes('attachment')
       || inheritedGroup?.data?.primaryLine !== 'female'
       || !inheritedGroup?.data?.lineRefs?.includes('romance')
+      || updatedManualScene.data?.primaryLineSource !== 'manual'
       || resolvedComment.data?.timecode !== '00:06'
       || resolvedComment.data?.resolved !== true
       || oversizedResponse.status !== 413
@@ -231,6 +256,7 @@ const jsonRequest = async (url, options = {}) => {
       upload: uploaded.files[0].name,
       manualRecordStatus: approved.status,
       sceneLinePropagation: inheritedGroup.data.lineRefs,
+      assetImageRoundTrip: downloadedAssetImage.length,
       timecodedFeedback: resolvedComment.data.timecode,
       oversizedUploadStatus: oversizedResponse.status,
       proxyValidationClean: true,
