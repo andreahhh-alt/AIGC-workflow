@@ -217,6 +217,19 @@ function recordSceneIds(record) {
   return [...new Set(refs.map(ref => typeof ref === 'string' ? ref : ref.sceneId).filter(Boolean))];
 }
 
+function groupShots(group) {
+  const shots = Array.isArray(group?.data?.shots) && group.data.shots.length
+    ? group.data.shots
+    : [{
+        code:`${group?.data?.code || 'SHOT'}-S1`,
+        title:group?.data?.title || group?.name || '15秒分镜',
+        duration:15,
+        beats:Array.isArray(group?.data?.beats) ? group.data.beats : [],
+        endState:group?.data?.endState || ''
+      }];
+  return shots.map((shot,index) => ({...shot,duration:15,sequenceIndex:index + 1}));
+}
+
 function lineOptions(selected) {
   return STORY_LINES
     .filter(([line]) => line !== 'all')
@@ -531,10 +544,11 @@ function renderStoryboard() {
     const groups = state.sceneLineFilter === 'all'
       ? allGroups
       : allGroups.filter(group => (group.data?.lineRefs || []).includes(state.sceneLineFilter));
+    const shotCount = groups.reduce((sum,group) => sum + groupShots(group).length,0);
     return `<button class="scene-button ${scene.id === state.selectedSceneId ? 'active' : ''}" data-scene="${scene.id}">
       <span>${escapeHtml(scene.data?.displaySceneNo || scene.data?.sceneNo || '—')}</span>
       <div><strong>${escapeHtml(scene.data?.heading || scene.name)}</strong>
-      <small>${groups.length}个15s分镜组 · ${escapeHtml(STATUS_NAMES[scene.status] || scene.status)}</small>
+      <small>${groups.length}个分镜组 · ${shotCount}个15秒分镜 · ${escapeHtml(STATUS_NAMES[scene.status] || scene.status)}</small>
       <div class="scene-line-tags">${sceneLines(scene).slice(0,3).map(line => lineTag(line,line === scene.data?.primaryLine)).join('')}</div></div>
     </button>`;
   }).join('') : '<div class="empty-state">当前线路没有匹配场次。可以切换“全部场次”或重新运行线路分析。</div>';
@@ -563,8 +577,8 @@ function renderStoryboard() {
         <select id="scene-primary-line-${escapeHtml(scene.id)}" data-scene-primary-line="${escapeHtml(scene.id)}">${lineOptions(scene.data?.primaryLine || 'other')}</select>
         <small>${(scene.data?.secondaryLines || []).length ? `同时属于：${scene.data.secondaryLines.map(line => escapeHtml(STORY_LINE_NAMES[line] || line)).join('、')}` : '可在这里直接选择主要线路'}</small>
       </div>
-      <div><span>视角人物</span><strong>${escapeHtml(scene.data?.povCharacter || '待确认')}</strong></div>
-      <div><span>出场人物</span><strong>${escapeHtml((scene.data?.characters || []).join(' · ') || '待提取')}</strong></div>
+      <div class="scene-semantic-field"><span>叙事视角（POV）</span><strong>${escapeHtml(scene.data?.povCharacter || '待AI分析')}</strong><small>本场主要跟随谁的感知与信息，不代表此人必须始终在画面中。</small></div>
+      <div class="scene-semantic-field"><span>实际出场人物</span><strong>${escapeHtml((scene.data?.characters || []).join(' · ') || '待AI提取')}</strong><small>本场真实出现或参与行动的人物；出场不等于该场属于其单线。</small></div>
       <div><span>稳定坐标</span><strong class="mono">${escapeHtml(scene.data?.canonicalKey || scene.id)}</strong></div>
     </div>
     ${events.length ? `<div class="scene-events"><span>本场剧情事件</span>${events.map(event => `<i>${escapeHtml(event.label)}<small>${escapeHtml(event.type || '')}</small></i>`).join('')}</div>` : ''}
@@ -580,30 +594,73 @@ function renderStoryboard() {
   if (groups.length && !groups.some(group => group.id === state.selectedShotGroupId)) {
     state.selectedShotGroupId = groups[0].id;
   }
-  $('#shot-list').innerHTML = groups.length ? groups.map(renderShotCard).join('') : '<div class="empty-state">本场还没有15秒分镜组。</div>';
+  $('#shot-list').innerHTML = groups.length ? groups.map(renderShotCard).join('') : '<div class="empty-state">本场还没有分镜组与15秒分镜。</div>';
   renderShotInspector();
   renderSceneRail();
   renderContextCommand();
 }
 
 function renderShotCard(group) {
-  const beats = group.data?.beats || [];
+  const shots = groupShots(group);
+  const beats = shots.flatMap(shot => shot.beats || []);
   const colors = group.data?.colorCard || [];
   const hasPrompt = Boolean(group.data?.promptZh || group.data?.promptEn);
   return `<article class="shot-frame ${group.id === state.selectedShotGroupId ? 'selected' : ''}" id="shot-${escapeHtml(group.id)}" data-select-shot="${escapeHtml(group.id)}" tabindex="0">
     <div class="shot-preview">
       <span class="shot-code">${escapeHtml(group.data?.code || '')}</span>
-      <b>${escapeHtml(group.data?.duration || 15)}s</b>
+      <b>${shots.length} × 15s</b>
       <em>${hasPrompt ? 'PROMPT READY' : 'AI DRAFT'}</em>
       ${colors.length ? `<div class="color-strip">${colors.map(color => `<i style="background:${escapeHtml(color.hex)}" title="${escapeHtml(color.name)}"></i>`).join('')}</div>` : ''}
     </div>
     <div class="shot-frame-body">
       <div class="shot-frame-title"><h3>${escapeHtml(group.data?.title || group.name)}</h3>${statusTag(group.status)}</div>
-      <small>${escapeHtml(group.subtype)} · ${escapeHtml(group.data?.mode || 'T2V')} · ${escapeHtml(group.data?.targetModel || '通用')}</small>
+      <small>分镜组 · ${shots.length}个15秒分镜 · ${escapeHtml(group.subtype)} · ${escapeHtml(group.data?.mode || 'T2V')}</small>
+      <div class="group-shot-codes">${shots.map(shot => `<span>${escapeHtml(shot.code)}</span>`).join('')}</div>
       <div class="mini-beats">${beats.length ? beats.slice(0,4).map(beat => `<i title="${escapeHtml(beat.action)}"></i>`).join('') : '<i></i><i></i><i></i>'}</div>
       <div class="scene-line-tags">${(group.data?.lineRefs || []).slice(0,3).map(line => lineTag(line,line === group.data?.primaryLine)).join('')}</div>
     </div>
   </article>`;
+}
+
+function renderStructuredPrompt(group) {
+  const shots = groupShots(group);
+  const prompts = Array.isArray(group.data?.shotPrompts) ? group.data.shotPrompts : [];
+  if (!prompts.length) {
+    return group.data?.promptZh
+      ? `<details class="prompt-legacy"><summary>旧版提示词（重新生成后将升级为结构格式）</summary><pre>${escapeHtml(group.data.promptZh)}</pre></details>`
+      : '<p class="muted-copy">尚未生成。生成后会按“镜头参数、15秒时间轴、关键帧、约束、音效、双语全文”分区显示。</p>';
+  }
+  return `<div class="structured-prompt-list">${shots.map((shot,index) => {
+    const prompt = prompts.find(item => item.shotCode === shot.code) || prompts[index] || {};
+    const camera = prompt.camera || {};
+    const timeline = Array.isArray(prompt.timeline) ? prompt.timeline : [];
+    const keyframes = Array.isArray(prompt.keyframes) ? prompt.keyframes : [];
+    const constraints = prompt.constraints || {};
+    return `<article class="structured-prompt-card">
+      <header><div><b>${escapeHtml(shot.code)}</b><strong>${escapeHtml(prompt.title || shot.title)}</strong></div><span>15s</span></header>
+      <section><h4>镜头参数</h4><dl class="prompt-facts">
+        <div><dt>机位</dt><dd>${escapeHtml(camera.position || '待生成')}</dd></div>
+        <div><dt>景别</dt><dd>${escapeHtml(camera.shotSize || '待生成')}</dd></div>
+        <div><dt>焦段 / 光圈</dt><dd>${escapeHtml([camera.lens,camera.aperture].filter(Boolean).join(' · ') || '待生成')}</dd></div>
+        <div><dt>运镜</dt><dd>${escapeHtml(camera.movement || '待生成')}</dd></div>
+      </dl></section>
+      <section><h4>15秒时间轴</h4><div class="prompt-timeline">${timeline.length ? timeline.map(item => `<div>
+        <b>${escapeHtml(item.time || '')}</b><span>${escapeHtml(item.shotSize || '')}</span>
+        <p>${escapeHtml([item.movement,item.action].filter(Boolean).join(' · '))}</p>
+        ${item.dialoguePerformance ? `<small>台词表演：${escapeHtml(item.dialoguePerformance)}</small>` : ''}
+      </div>`).join('') : '<p class="muted-copy">待生成时间段。</p>'}</div></section>
+      <section><h4>关键帧强制声明</h4><ul>${keyframes.length ? keyframes.map(frame => `<li><b>${escapeHtml(frame.time || '')}</b>${escapeHtml(frame.frame || frame)}</li>`).join('') : '<li>待生成关键帧。</li>'}</ul></section>
+      <section class="prompt-constraints"><h4>连续性与限制</h4>
+        <div><b>必须有</b><p>${escapeHtml((constraints.must || []).join('；') || '待生成')}</p></div>
+        <div><b>不允许</b><p>${escapeHtml((constraints.avoid || []).join('；') || '待生成')}</p></div>
+        <div><b>状态延续</b><p>${escapeHtml((constraints.continuity || []).join('；') || '待生成')}</p></div>
+      </section>
+      ${Array.isArray(prompt.sound) && prompt.sound.length ? `<section><h4>声音</h4><p>${escapeHtml(prompt.sound.join('；'))}</p></section>` : ''}
+      ${prompt.transitionCard ? `<section><h4>跨段衔接卡</h4><p>${escapeHtml(prompt.transitionCard)}</p></section>` : ''}
+      <details><summary>中文完整提示词</summary><pre>${escapeHtml(prompt.promptZh || '')}</pre></details>
+      <details><summary>English Prompt</summary><pre>${escapeHtml(prompt.promptEn || '')}</pre></details>
+    </article>`;
+  }).join('')}</div>`;
 }
 
 function renderShotInspector() {
@@ -615,27 +672,32 @@ function renderShotInspector() {
     return;
   }
   const scene = state.data.scenes.find(item => item.id === group.data?.sceneId);
-  const beats = Array.isArray(group.data?.beats) ? group.data.beats : [];
+  const shots = groupShots(group);
+  const beats = shots.flatMap(shot => shot.beats || []);
   const colors = Array.isArray(group.data?.colorCard) ? group.data.colorCard : [];
   const comments = (state.data.comments || []).filter(item => item.data?.shotGroupId === group.id);
   panel.innerHTML = `
     <div class="inspector-head"><span>SHOT INSPECTOR</span><b>${escapeHtml(group.data?.code || '')}</b></div>
     <h2>${escapeHtml(group.data?.title || group.name)}</h2>
-    <p class="inspector-meta">场 ${escapeHtml(scene?.data?.displaySceneNo || '—')} · ${group.data?.duration || 15}s · ${escapeHtml(group.data?.mode || 'T2V')}</p>
+    <p class="inspector-meta">场 ${escapeHtml(scene?.data?.displaySceneNo || '—')} · 分镜组 · ${shots.length}个15秒分镜 · 共${shots.length * 15}s · ${escapeHtml(group.data?.mode || 'T2V')}</p>
     <div class="inspector-lines">${(group.data?.lineRefs || []).map(line => lineTag(line,line === group.data?.primaryLine)).join('') || '<span class="status">待分类</span>'}</div>
     <section class="inspector-section">
-      <header><span>节奏 / 15秒</span><small>${beats.length} 个动作拍点</small></header>
-      <div class="inspector-beats">${beats.length ? beats.map(beat => `<div><b>${escapeHtml(beat.time)}</b><p>${escapeHtml(beat.action)}</p></div>`).join('') : '<p class="muted-copy">尚未生成动作节奏。</p>'}</div>
+      <header><span>组内分镜</span><small>${shots.length} × 15秒</small></header>
+      <div class="group-shot-list">${shots.map(shot => `<article><header><b>${escapeHtml(shot.code)}</b><span>15s</span></header><strong>${escapeHtml(shot.title)}</strong>
+        <div class="inspector-beats">${(shot.beats || []).length ? shot.beats.map(beat => `<div><b>${escapeHtml(beat.time)}</b><p>${escapeHtml(beat.action)}</p></div>`).join('') : '<p class="muted-copy">尚未生成动作节奏。</p>'}</div>
+      </article>`).join('')}</div>
     </section>
     <section class="inspector-section">
-      <header><span>提示词</span><small>${group.data?.promptZh ? '已生成' : '等待生成'}</small></header>
-      <p class="prompt-preview">${escapeHtml(group.data?.promptZh || '在保留人物、场景和连续性约束的前提下，由你决定何时调用 AI。')}</p>
-      ${colors.length ? `<div class="inspector-palette">${colors.map(color => `<i style="background:${escapeHtml(color.hex)}"><span>${escapeHtml(color.name || color.hex)}</span></i>`).join('')}</div>` : ''}
+      <header><span>结构化提示词</span><small>${group.data?.promptZh ? `${shots.length}个分镜已生成` : '等待生成'}</small></header>
+      ${renderStructuredPrompt(group)}
+    </section>
+    <section class="inspector-section group-color-card">
+      <header><span>分镜组共用色卡</span><small>整组只生成1张</small></header>
+      ${colors.length ? `<div class="color-card-preview">${colors.map(color => `<div><i style="background:${escapeHtml(color.hex)}"></i><b>${escapeHtml(color.hex)}</b><span>${escapeHtml(color.name || '')}</span></div>`).join('')}</div>` : '<p class="muted-copy">尚未生成本组共用色卡。</p>'}
       <div class="inspector-actions">
         <button data-prompt="${group.id}" class="primary-button">AI生成 / 再生成</button>
-        ${colors.length ? `<a href="/api/records/${encodeURIComponent(group.id)}/color-card.svg">下载色卡图片</a>` : ''}
+        ${colors.length ? `<button data-download-color-card="${group.id}">下载PNG色卡</button>` : ''}
         <button data-copy="${group.id}">复制提示词</button>
-        <button data-feedback="${group.id}">展开查看</button>
         <button data-edit-group-lines="${group.id}">编辑线路</button>
         <button data-approve="${group.id}">确认并锁定</button>
       </div>
@@ -1124,7 +1186,7 @@ function bindEvents() {
   $('#ai-split-scenes').addEventListener('click',() => {
     const range = prompt('拆分范围（可留空代表全部剧本；例如：场1-20）','');
     if (range === null) return;
-    runAI('scenes',[],{range},'正在拆分场次与15秒分镜组');
+    runAI('scenes',[],{range},'正在拆分场次、分镜组与15秒分镜');
   });
   $('#audit-storyboard').addEventListener('click',() =>
     runAI('audit',['continuity','axis','action_density','light','prompt_compatibility'],{},'正在检查分镜连续性')
@@ -1174,6 +1236,8 @@ function bindEvents() {
     if (editLines) return editGroupLines(editLines.dataset.editGroupLines);
     const copy = event.target.closest('[data-copy]');
     if (copy) return copyPrompt(copy.dataset.copy);
+    const colorCard = event.target.closest('[data-download-color-card]');
+    if (colorCard) return downloadColorCard(colorCard.dataset.downloadColorCard);
     const feedback = event.target.closest('[data-feedback]');
     if (feedback) return previewPrompt(feedback.dataset.feedback);
     const resolve = event.target.closest('[data-resolve-comment]');
@@ -1316,6 +1380,37 @@ function copyPrompt(groupId) {
   const text = group?.data?.promptZh;
   if (!text) return toast('这一分镜还没有中文提示词','error');
   navigator.clipboard.writeText(text).then(() => toast('中文提示词已复制')).catch(() => toast('复制失败','error'));
+}
+
+async function downloadColorCard(groupId) {
+  const group = state.data.shotGroups.find(item => item.id === groupId);
+  if (!group?.data?.colorCard?.length) return toast('这一分镜组还没有色卡','error');
+  try {
+    const response = await fetch(`/api/records/${encodeURIComponent(groupId)}/color-card.svg?inline=1`);
+    if (!response.ok) throw new Error('色卡读取失败');
+    const svgBlob = await response.blob();
+    const svgUrl = URL.createObjectURL(svgBlob);
+    const image = new Image();
+    await new Promise((resolve,reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error('色卡渲染失败'));
+      image.src = svgUrl;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth || 1600;
+    canvas.height = image.naturalHeight || 520;
+    canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+    URL.revokeObjectURL(svgUrl);
+    const pngBlob = await new Promise(resolve => canvas.toBlob(resolve,'image/png'));
+    if (!pngBlob) throw new Error('PNG生成失败');
+    const url = URL.createObjectURL(pngBlob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${group.data?.code || group.id}_分镜组色卡.png`;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url),1000);
+    toast('PNG色卡已下载');
+  } catch (error) { toast(error.message,'error'); }
 }
 
 function previewPrompt(groupId) {

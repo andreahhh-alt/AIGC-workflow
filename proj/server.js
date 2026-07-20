@@ -653,6 +653,27 @@ const normalizeLineList = values => [...new Set((Array.isArray(values) ? values 
   .map(normalizeLine)
   .filter(Boolean))];
 
+function normalizeGroupShots(group = {}) {
+  const source = Array.isArray(group.shots) && group.shots.length
+    ? group.shots
+    : [{
+        code: group.shotCode || `${group.code || 'SHOT'}-S1`,
+        title: group.title || '15秒分镜',
+        duration: 15,
+        beats: Array.isArray(group.beats) ? group.beats : [],
+        endState: group.endState || ''
+      }];
+  return source.map((shot, index) => ({
+    ...shot,
+    code: String(shot.code || `${group.code || 'SHOT'}-S${index + 1}`),
+    title: String(shot.title || `${group.title || '分镜'} ${index + 1}`),
+    duration: 15,
+    sequenceIndex: index + 1,
+    beats: Array.isArray(shot.beats) ? shot.beats : [],
+    endState: String(shot.endState || '')
+  }));
+}
+
 function normalizeSceneData(projectId, scene, project, options = {}) {
   const sceneNo = normalizeSceneNo(scene.sceneNo);
   const episodeNo = normalizeSceneNo(scene.episodeNo || project?.data?.episodeNo || 'film');
@@ -908,6 +929,7 @@ async function migrateExistingSceneLinks() {
     for (const group of groups) {
       const scene = migratedScenes.get(group.data?.sceneId);
       if (!scene) continue;
+      const normalizedShots = normalizeGroupShots(group.data || {});
       const nextData = {
         ...group.data,
         sceneNo: group.data?.sceneNo || scene.data.sceneNo,
@@ -918,7 +940,10 @@ async function migrateExistingSceneLinks() {
         lineRefs: normalizeLineList(group.data?.lineRefs?.length
           ? group.data.lineRefs
           : [scene.data.primaryLine, ...(scene.data.secondaryLines || [])]),
-        lineRefsSource: group.data?.lineRefsSource || 'scene_inherited'
+        lineRefsSource: group.data?.lineRefsSource || 'scene_inherited',
+        shots: normalizedShots,
+        shotCount: normalizedShots.length,
+        duration: normalizedShots.length * 15
       };
       if (JSON.stringify(nextData) !== JSON.stringify(group.data || {})) {
         group.data = nextData;
@@ -1153,7 +1178,9 @@ async function runSceneJob(projectId, scope, context) {
 male（男主主导）、female（女主主导）、supporting（配角主导）、ensemble（群像/男女共同）、world（世界观）、romance（感情线）、mystery（悬疑线）、other。
 secondaryLines允许多个。不要因为人物出场就判定为其单线，必须依据本场叙事目标和视角。
 输出格式：
-{"scenes":[{"sceneIndex":1,"sceneNo":"1","episodeNo":"film","heading":"内/外景·地点·时间","summary":"本场事件与功能","primaryLine":"male|female|supporting|ensemble|world|romance|mystery|other","secondaryLines":["romance"],"povCharacter":"视角人物","characters":["出场人物"],"events":[{"label":"剧情事件","type":"goal|action|obstacle|choice|reveal|turn|payoff"}],"sourceText":"对应原文摘要","sourceRefs":["文件名/场次"],"shotGroups":[{"code":"1-1","title":"短标题","type":"D-1|D-2|D-3|D-SEQ","duration":15,"lineRefs":["male"],"eventRefs":["剧情事件名称"],"beats":[{"time":"0-4s","action":"单一核心动作"}],"endState":"末帧状态"}]}]}
+分镜组是剪辑与视觉连续性的上层容器；每个分镜组必须包含1个或以上shots，每个shot固定15秒。色卡属于分镜组，不属于单个shot。
+输出格式：
+{"scenes":[{"sceneIndex":1,"sceneNo":"1","episodeNo":"film","heading":"内/外景·地点·时间","summary":"本场事件与功能","primaryLine":"male|female|supporting|ensemble|world|romance|mystery|other","secondaryLines":["romance"],"povCharacter":"叙事视角人物","characters":["实际出场人物"],"events":[{"label":"剧情事件","type":"goal|action|obstacle|choice|reveal|turn|payoff"}],"sourceText":"对应原文摘要","sourceRefs":["文件名/场次"],"shotGroups":[{"code":"1-G1","title":"分镜组短标题","type":"D-1|D-2|D-3|D-SEQ","lineRefs":["male"],"eventRefs":["剧情事件名称"],"shots":[{"code":"1-G1-S1","title":"15秒分镜短标题","duration":15,"beats":[{"time":"0-4s","action":"单一核心动作"}],"endState":"末帧状态"}]}]}]}
 输入场次：
 ${JSON.stringify(sourceScenes)}`;
 
@@ -1233,6 +1260,7 @@ ${JSON.stringify(sourceScenes)}`;
       });
     }
     for (const [groupIndex, group] of (normalized.shotGroups || []).entries()) {
+      const shots = normalizeGroupShots(group);
       const code = normalized.numberingConflict
         ? `${normalized.displaySceneNo}-${groupIndex + 1}`
         : (group.code || `${normalized.sceneNo}-${groupIndex + 1}`);
@@ -1259,6 +1287,9 @@ ${JSON.stringify(sourceScenes)}`;
           lineRefs: normalizeLineList(group.lineRefs?.length ? group.lineRefs : [normalized.primaryLine, ...normalized.secondaryLines]),
           lineRefsSource: group.lineRefs?.length ? 'ai_group' : 'scene_inherited',
           eventRefs: Array.isArray(group.eventRefs) ? group.eventRefs : [],
+          shots,
+          shotCount: shots.length,
+          duration: shots.length * 15,
           promptStatus: existingGroup?.data?.promptStatus || 'not_generated'
         },
         order: order++, createdAt: existingGroup?.createdAt || now(), updatedAt: now()
@@ -1291,18 +1322,42 @@ async function runPromptJob(projectId, targets, scope) {
   const project = await Store.get(projectId);
   const assets = await Store.list(projectId, 'asset');
   const scene = group.data.sceneId ? await Store.get(group.data.sceneId) : null;
+  const shots = normalizeGroupShots(group.data || {});
   const fields = Array.isArray(scope?.fields) && scope.fields.length ? scope.fields : ['prompt', 'colorCard', 'continuity'];
-  const prompt = `为以下15秒分镜组生成用户选择的字段：${fields.join('、')}。
+  const prompt = `为以下分镜组生成用户选择的字段：${fields.join('、')}。
+层级关系必须严格遵守：场次 > 分镜组 > 一个或以上15秒分镜。色卡只在分镜组层生成一张，由组内全部15秒分镜共用；不要给每个15秒分镜重复生成色卡。
 项目STYLE LOCK：${JSON.stringify(project?.data?.styleLock || {})}
 场次：${JSON.stringify(scene?.data || {})}
 分镜组：${JSON.stringify(group.data)}
+组内15秒分镜：${JSON.stringify(shots)}
 可用资产：${JSON.stringify(assets.slice(0, 80).map(item => ({ type: item.subtype, name: item.name, data: item.data })))}
 目标模型：${scope?.targetModel || group.data.targetModel || '通用'}
 模式：${scope?.mode || group.data.mode || 'T2V'}
-输出格式：
-{"promptZh":"完整中文提示词","promptEn":"结构对应英文提示词","colorCard":[{"hex":"#RRGGBB","name":"颜色名","usage":"用途"}],"fields":{"camera":"机位","lens":"焦段光圈","movement":"单向带速度运镜","beats":[{"time":"0-4s","action":"动作"}],"keyframes":["关键帧"],"constraints":{"must":["必须有"],"avoid":["不允许"],"continuity":["状态延续"]},"transitionCard":"跨段衔接卡"}}
-只生成要求字段；没有要求的字段可留空字符串或空数组。`;
+严格执行D类影视提示词v4.7：每个时间段最多一个核心动作；台词包含触发时机、音量语气、同步肢体、停顿节奏；运镜为单一方向并带速度；Dolly与Zoom不得混用；包含关键帧强制声明和连续性约束。
+输出严格JSON：
+{"groupSummary":"分镜组叙事功能","styleLock":"本组共用STYLE LOCK","mode":"T2V|I2V","colorCard":[{"hex":"#RRGGBB","name":"颜色名","usage":"组内用途"}],"groupContinuity":["组内全部分镜共用的连续性要求"],"shots":[{"shotCode":"对应输入code","title":"15秒分镜标题","promptZh":"完整结构化中文提示词","promptEn":"结构完全对应英文提示词","camera":{"position":"机位位置、高度与角度","shotSize":"景别","lens":"焦段mm","aperture":"光圈F值","movement":"单向且带速度的运镜"},"timeline":[{"time":"0-4s","shotSize":"景别","movement":"运镜","action":"唯一核心动作","dialoguePerformance":"台词四要素；无台词则空"}],"keyframes":[{"time":"约Xs","frame":"精确画面"}],"constraints":{"must":["必须有"],"avoid":["不允许"],"continuity":["状态延续"]},"sound":["环境与动作音效"],"transitionCard":"到下一15秒分镜的跨段衔接卡"}]}
+shots数量与输入完全一致；没有要求的字段可留空字符串或空数组。`;
   const data = parseAIJson(await callAI(FILM_SYSTEM, prompt, { json: true }));
+  const generatedShots = Array.isArray(data.shots) ? data.shots : [];
+  const shotPrompts = shots.map((shot, index) => {
+    const generated = generatedShots.find(item => item.shotCode === shot.code) || generatedShots[index] || {};
+    return {
+      ...generated,
+      shotCode: shot.code,
+      title: generated.title || shot.title,
+      duration: 15,
+      timeline: Array.isArray(generated.timeline) ? generated.timeline : (Array.isArray(data.fields?.beats) ? data.fields.beats : []),
+      keyframes: Array.isArray(generated.keyframes) ? generated.keyframes : (Array.isArray(data.fields?.keyframes) ? data.fields.keyframes : []),
+      constraints: generated.constraints || data.fields?.constraints || {},
+      camera: generated.camera || {
+        position: data.fields?.camera || '',
+        lens: data.fields?.lens || '',
+        movement: data.fields?.movement || ''
+      }
+    };
+  });
+  const combinedPromptZh = shotPrompts.map(item => `【${item.shotCode} · ${item.title}】\n${item.promptZh || ''}`).join('\n\n');
+  const combinedPromptEn = shotPrompts.map(item => `[${item.shotCode} · ${item.title}]\n${item.promptEn || ''}`).join('\n\n');
   group.status = 'ai_draft';
   group.updatedAt = now();
   group.data = {
@@ -1310,8 +1365,15 @@ async function runPromptJob(projectId, targets, scope) {
     promptStatus: 'ai_draft',
     targetModel: scope?.targetModel || group.data.targetModel || '通用',
     mode: scope?.mode || group.data.mode || 'T2V',
-    promptZh: data.promptZh || group.data.promptZh || '',
-    promptEn: data.promptEn || group.data.promptEn || '',
+    shots,
+    shotCount: shots.length,
+    duration: shots.length * 15,
+    groupSummary: data.groupSummary || group.data.groupSummary || '',
+    groupStyleLock: data.styleLock || group.data.groupStyleLock || '',
+    groupContinuity: Array.isArray(data.groupContinuity) ? data.groupContinuity : (group.data.groupContinuity || []),
+    shotPrompts,
+    promptZh: combinedPromptZh || data.promptZh || group.data.promptZh || '',
+    promptEn: combinedPromptEn || data.promptEn || group.data.promptEn || '',
     colorCard: data.colorCard || group.data.colorCard || [],
     generatedFields: { ...(group.data.generatedFields || {}), ...(data.fields || {}) },
     lastGeneratedAt: now()
@@ -1535,29 +1597,29 @@ app.get('/api/records/:id/color-card.svg', async (req, res) => {
     const colors = Array.isArray(group.data?.colorCard) ? group.data.colorCard : [];
     if (!colors.length) return res.status(404).send('Color card is empty');
     const scene = group.data?.sceneId ? await Store.get(group.data.sceneId) : null;
-    const width = 1400;
-    const height = 420;
-    const gap = 12;
-    const left = 54;
+    const width = 1600;
+    const height = 520;
+    const gap = 16;
+    const left = 36;
     const swatchWidth = (width - left * 2 - gap * (colors.length - 1)) / colors.length;
     const swatches = colors.map((color, index) => {
       const x = left + index * (swatchWidth + gap);
       const hex = /^#[0-9a-f]{3,8}$/i.test(String(color.hex || '')) ? color.hex : '#243342';
-      return `<rect x="${x}" y="132" width="${swatchWidth}" height="190" fill="${escapeXml(hex)}"/>
-        <text x="${x}" y="356" fill="#edf2f5" font-family="Arial, sans-serif" font-size="20">${escapeXml(color.name || `色彩 ${index + 1}`)}</text>
-        <text x="${x}" y="385" fill="#7890a8" font-family="monospace" font-size="16">${escapeXml(String(hex).toUpperCase())}</text>`;
+      return `<rect x="${x}" y="138" width="${swatchWidth}" height="276" fill="${escapeXml(hex)}"/>
+        <text x="${x}" y="452" fill="#8fa4b8" font-family="Arial, sans-serif" font-size="19">${escapeXml(String(hex).toUpperCase())}  ${escapeXml(color.name || `色彩 ${index + 1}`)}</text>
+        <text x="${x}" y="482" fill="#586c80" font-family="Arial, sans-serif" font-size="15">${escapeXml(color.usage || '')}</text>`;
     }).join('');
-    const title = `${group.data?.code || ''} · ${group.data?.title || group.name}`;
-    const subtitle = `场${scene?.data?.displaySceneNo || '—'} · ${scene?.data?.heading || scene?.name || ''} · AIGC WORKFLOW COLOR CARD`;
+    const title = `场${scene?.data?.displaySceneNo || '—'} · ${group.data?.title || group.name}`;
+    const subtitle = `${group.data?.code || ''} · ${group.data?.shotCount || normalizeGroupShots(group.data || {}).length}个15秒分镜共用 · ${scene?.data?.heading || scene?.name || ''}`;
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
       <rect width="${width}" height="${height}" fill="#0b1017"/>
-      <text x="54" y="62" fill="#edf2f5" font-family="serif" font-size="32">${escapeXml(title)}</text>
-      <text x="54" y="96" fill="#7890a8" font-family="Arial, sans-serif" font-size="18">${escapeXml(subtitle)}</text>
+      <text x="36" y="58" fill="#edf2f5" font-family="serif" font-size="34">${escapeXml(title)}</text>
+      <text x="36" y="98" fill="#52677a" font-family="Arial, sans-serif" font-size="18">${escapeXml(subtitle)}</text>
       ${swatches}
     </svg>`;
     const filename = `${group.data?.code || group.id}_color-card.svg`;
     res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Disposition', `${req.query.inline === '1' ? 'inline' : 'attachment'}; filename="${filename}"`);
     res.send(svg);
   } catch (error) {
     res.status(500).send(String(error.message || error));
@@ -1639,6 +1701,10 @@ app.post('/api/projects/:projectId/records', async (req, res) => {
       createdAt: now(),
       updatedAt: now()
     };
+    if (kind === 'shot_group') {
+      const shots = normalizeGroupShots(record.data || {});
+      record.data = { ...record.data, shots, shotCount: shots.length, duration: shots.length * 15 };
+    }
 
     res.status(201).json(await Store.put(record));
   } catch (error) {
@@ -1912,5 +1978,6 @@ module.exports = {
   callAI,
   normalizeUploadFilename,
   mergeSceneLineMembership,
+  normalizeGroupShots,
   WORKFLOW_SCHEMA_MIGRATIONS
 };

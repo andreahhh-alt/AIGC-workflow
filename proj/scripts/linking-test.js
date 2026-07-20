@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { normalizeSceneData, linkAnalysisData, mergeSceneLineMembership } = require('../server');
+const { normalizeSceneData, linkAnalysisData, mergeSceneLineMembership, normalizeGroupShots } = require('../server');
 
 const project = { data: { scriptVersion: 'test-v1' } };
 const scene21AData = normalizeSceneData('test-project', {
@@ -66,6 +66,26 @@ const manualChoicePreserved = mergeSceneLineMembership({
 assert.strictEqual(manualChoicePreserved.primaryLine, 'male');
 assert(manualChoicePreserved.secondaryLines.includes('female'));
 
+const migratedGroupShots = normalizeGroupShots({
+  code:'14-G1',
+  title:'旧版分镜',
+  duration:15,
+  beats:[{time:'0-4s',action:'建立空间'}]
+});
+assert.strictEqual(migratedGroupShots.length, 1);
+assert.strictEqual(migratedGroupShots[0].code, '14-G1-S1');
+assert.strictEqual(migratedGroupShots[0].duration, 15);
+
+const multiShotGroup = normalizeGroupShots({
+  code:'14-G2',
+  shots:[
+    {code:'14-G2-S1',duration:9,title:'建立'},
+    {code:'14-G2-S2',duration:22,title:'反应'}
+  ]
+});
+assert.strictEqual(multiShotGroup.length, 2);
+assert(multiShotGroup.every(shot => shot.duration === 15));
+
 console.log(JSON.stringify({
   ok: true,
   stableIds: 2,
@@ -73,5 +93,6 @@ console.log(JSON.stringify({
   ambiguousLinkBlocked: true,
   chineseSceneReferenceResolved: true,
   graphLineMembershipSynced: true,
-  manualLineChoicePreserved: true
+  manualLineChoicePreserved: true,
+  shotGroupHierarchyNormalized: true
 }));
