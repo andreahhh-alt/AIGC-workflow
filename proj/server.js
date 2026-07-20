@@ -59,6 +59,15 @@ const uploadFilesMiddleware = (req, res, next) => {
     return res.status(400).json({ error: `文件上传失败：${error.message || error}` });
   });
 };
+const uploadAssetImageMiddleware = (req, res, next) => {
+  upload.single('image')(req, res, error => {
+    if (!error) return next();
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: '资产图片不能超过 15MB。' });
+    }
+    return res.status(400).json({ error: `资产图片上传失败：${error.message || error}` });
+  });
+};
 
 const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -94,8 +103,9 @@ const LocalStore = {
   async put(record, blob = null) {
     const state = this.read();
     const copy = { ...record };
-    if (blob) copy.blobBase64 = blob.toString('base64');
     const index = state.records.findIndex(item => item.id === record.id);
+    if (blob) copy.blobBase64 = blob.toString('base64');
+    else if (index >= 0 && state.records[index].blobBase64) copy.blobBase64 = state.records[index].blobBase64;
     if (index >= 0) state.records[index] = copy;
     else state.records.push(copy);
     this.write(state);
@@ -738,6 +748,13 @@ function linkAnalysisData(data, scenes) {
   return { ...data, nodes, linkedSceneCount: new Set(nodes.flatMap(node => node.sceneRefs?.map(ref => ref.sceneId).filter(Boolean) || [])).size };
 }
 
+function recordSceneIds(record) {
+  const refs = Array.isArray(record?.data?.sceneRefs) ? record.data.sceneRefs : [];
+  return [...new Set(refs
+    .map(ref => typeof ref === 'string' ? ref : ref?.sceneId)
+    .filter(Boolean))];
+}
+
 async function relinkAnalyses(projectId) {
   const [scenes, analyses] = await Promise.all([
     Store.list(projectId, 'scene'),
@@ -747,6 +764,98 @@ async function relinkAnalyses(projectId) {
     analysis.data = linkAnalysisData(analysis.data || {}, scenes);
     analysis.updatedAt = now();
     await Store.put(analysis);
+  }
+}
+
+const ANALYSIS_LINE_MAP = {
+  timeline_male: 'male',
+  timeline_female: 'female',
+  supporting_arcs: 'supporting'
+};
+
+function mergeSceneLineMembership(data, memberships) {
+  const lines = normalizeLineList(memberships);
+  const currentPrimary = normalizeLine(data?.primaryLine);
+  const manualPrimary = data?.primaryLineSource === 'manual';
+  let primaryLine = currentPrimary;
+  if (!manualPrimary && (currentPrimary === 'other' || String(data?.primaryLineSource || '').startsWith('analysis'))) {
+    primaryLine = lines.includes('male') && lines.includes('female')
+      ? 'ensemble'
+      : (['male', 'female', 'supporting'].find(line => lines.includes(line)) || currentPrimary);
+  }
+  const secondaryLines = normalizeLineList([
+    ...(data?.secondaryLines || []),
+    ...lines
+  ]).filter(line => line !== primaryLine);
+  return {
+    ...data,
+    primaryLine,
+    secondaryLines,
+    primaryLineSource: manualPrimary
+      ? 'manual'
+      : (primaryLine !== currentPrimary ? `analysis:${lines.join('+')}` : data?.primaryLineSource),
+    analysisLineMemberships: lines
+  };
+}
+
+async function syncSceneLinesFromAnalyses(projectId) {
+  const [scenes, analyses, groups] = await Promise.all([
+    Store.list(projectId, 'scene'),
+    Store.list(projectId, 'analysis'),
+    Store.list(projectId, 'shot_group')
+  ]);
+  const memberships = new Map();
+  for (const analysis of analyses) {
+    const line = ANALYSIS_LINE_MAP[analysis.subtype];
+    if (!line) continue;
+    for (const node of analysis.data?.nodes || []) {
+      for (const ref of node.sceneRefs || []) {
+        if (!ref.sceneId) continue;
+        memberships.set(ref.sceneId, new Set([...(memberships.get(ref.sceneId) || []), line]));
+      }
+    }
+  }
+  for (const scene of scenes) {
+    const lines = [...(memberships.get(scene.id) || [])];
+    if (!lines.length) continue;
+    const nextData = mergeSceneLineMembership(scene.data || {}, lines);
+    if (JSON.stringify(nextData) !== JSON.stringify(scene.data || {})) {
+      scene.data = nextData;
+      scene.updatedAt = now();
+      await Store.put(scene);
+    }
+    for (const group of groups.filter(item =>
+      item.data?.sceneId === scene.id
+      && item.status !== 'locked'
+      && item.data?.lineRefsSource !== 'manual_group'
+    )) {
+      const lineRefs = normalizeLineList([...(group.data?.lineRefs || []), ...lines]);
+      const primaryLine = normalizeLine(group.data?.primaryLine) === 'other'
+        ? nextData.primaryLine
+        : normalizeLine(group.data?.primaryLine);
+      group.data = {
+        ...group.data,
+        primaryLine,
+        lineRefs,
+        analysisLineMemberships: lines
+      };
+      group.updatedAt = now();
+      await Store.put(group);
+    }
+  }
+}
+
+async function relinkAssets(projectId) {
+  const [scenes, assets] = await Promise.all([
+    Store.list(projectId, 'scene'),
+    Store.list(projectId, 'asset')
+  ]);
+  for (const asset of assets) {
+    const linked = linkAnalysisData({ nodes: [asset.data || {}] }, scenes).nodes[0] || asset.data || {};
+    if (JSON.stringify(linked) === JSON.stringify(asset.data || {})) continue;
+    asset.data = linked;
+    asset.updatedAt = now();
+    await Store.put(asset);
   }
 }
 
@@ -818,6 +927,8 @@ async function migrateExistingSceneLinks() {
       }
     }
     await relinkAnalyses(project.id);
+    await relinkAssets(project.id);
+    await syncSceneLinesFromAnalyses(project.id);
   }
 }
 
@@ -915,15 +1026,25 @@ ${context}`;
   if (!completed.length) {
     throw new Error(`知识分析失败：${failed.map(item => `${item.target}（${item.error}）`).join('；')}`);
   }
+  await syncSceneLinesFromAnalyses(projectId);
   return { count: completed.length, failed };
 }
 
 async function runAssetJob(projectId, targets, context) {
+  const scenes = await Store.list(projectId, 'scene');
+  const sceneRegistry = scenes.map(scene => ({
+    sceneId: scene.id,
+    sceneNo: scene.data?.sceneNo,
+    sceneRef: scene.data?.sceneRef,
+    heading: scene.data?.heading
+  }));
   const outcomes = await mapWithConcurrency(targets, 2, async target => {
     const prompt = `只从资料中提取并整理一种资产类别：${target}。
 输出严格JSON：
-{"assets":[{"type":"${target}","name":"资产名","description":"可直接用于制作的具体描述","tags":["标签"],"visualAnchor":"视觉锚点或声音锚点","continuity":"连续性要求","sourceRefs":["来源"],"confidence":"high|medium|low"}]}
+{"assets":[{"type":"${target}","name":"资产名","description":"可直接用于制作的具体描述","tags":["标签"],"visualAnchor":"视觉锚点或声音锚点","continuity":"连续性要求","sceneRefs":[{"sceneNo":"14","sceneRef":"14#1","role":"出现/使用"}],"sourceRefs":["来源"],"confidence":"high|medium|low"}]}
 同名资产合并，不能凭空新增主要人物；每项必须能追溯到资料。
+场次索引：
+${JSON.stringify(sceneRegistry)}
 资料如下：
 ${context}`;
     try {
@@ -931,10 +1052,11 @@ ${context}`;
       const assets = Array.isArray(data.assets) ? data.assets : [];
       for (const item of assets) {
         item.type = target;
+        const linked = linkAnalysisData({ nodes: [item] }, scenes).nodes[0] || item;
         const stable = crypto.createHash('sha1').update(`${projectId}:${target}:${item.name}`).digest('hex').slice(0, 16);
         await Store.put({
           id: `asset_${stable}`, projectId, kind: 'asset', subtype: target,
-          name: item.name, status: 'ai_draft', data: item,
+          name: item.name, status: 'ai_draft', data: linked,
           order: now(), createdAt: now(), updatedAt: now()
         });
       }
@@ -1158,6 +1280,7 @@ ${JSON.stringify(sourceScenes)}`;
     }
   }
   await relinkAnalyses(projectId);
+  await syncSceneLinesFromAnalyses(projectId);
   return { scenes: scenes.length, groups: scenes.reduce((sum, scene) => sum + (scene.shotGroups || []).length, 0) };
 }
 
@@ -1195,6 +1318,59 @@ async function runPromptJob(projectId, targets, scope) {
   };
   await Store.put(group);
   return { groupId };
+}
+
+async function runAssetPromptJob(projectId, targets, context) {
+  const project = await Store.get(projectId);
+  const outcomes = await mapWithConcurrency(targets, 2, async assetId => {
+    try {
+      const asset = await Store.get(assetId);
+      if (!asset || asset.kind !== 'asset') throw new Error('未找到资产。');
+      const scenes = await Store.list(projectId, 'scene');
+      const linkedScenes = recordSceneIds(asset)
+        .map(id => scenes.find(scene => scene.id === id))
+        .filter(Boolean)
+        .map(scene => ({
+          sceneNo: scene.data?.displaySceneNo || scene.data?.sceneNo,
+          heading: scene.data?.heading,
+          summary: scene.data?.summary,
+          sourceText: scene.textContent
+        }));
+      const prompt = `为一个影视生产资产生成可直接使用的双语图像/声音提示词。
+资产类别：${asset.subtype}
+资产名称：${asset.name}
+资产资料：${JSON.stringify(asset.data || {})}
+关联场次：${JSON.stringify(linkedScenes)}
+项目STYLE LOCK：${JSON.stringify(project?.data?.styleLock || {})}
+输出严格JSON：
+{"promptZh":"完整中文生成提示词","promptEn":"结构对应英文提示词","negativePrompt":"负面提示词","visualNotes":["造型/材质/色彩/连续性锚点"],"sourceRefs":["依据"]}
+角色必须保持身份与服装连续性；场景必须说明空间结构、时间、天气和光线；道具必须说明材质、尺度和磨损；声音资产说明声源、空间与动态。没有依据的内容标记“AI推断”。
+项目资料节选：
+${context.slice(0, 70000)}`;
+      const data = parseAIJson(await callAI(FILM_SYSTEM, prompt, { json: true }));
+      asset.status = 'ai_draft';
+      asset.updatedAt = now();
+      asset.data = {
+        ...asset.data,
+        promptZh: data.promptZh || '',
+        promptEn: data.promptEn || '',
+        negativePrompt: data.negativePrompt || '',
+        visualNotes: Array.isArray(data.visualNotes) ? data.visualNotes : [],
+        promptSourceRefs: Array.isArray(data.sourceRefs) ? data.sourceRefs : [],
+        lastPromptGeneratedAt: now()
+      };
+      await Store.put(asset);
+      return { assetId, ok: true };
+    } catch (error) {
+      return { assetId, ok: false, error: String(error.message || error) };
+    }
+  });
+  const completed = outcomes.filter(item => item.ok);
+  const failed = outcomes.filter(item => !item.ok);
+  if (!completed.length) {
+    throw new Error(`资产提示词生成失败：${failed.map(item => `${item.assetId}（${item.error}）`).join('；')}`);
+  }
+  return { count: completed.length, failed };
 }
 
 async function runAuditJob(projectId, targets) {
@@ -1388,6 +1564,51 @@ app.get('/api/records/:id/color-card.svg', async (req, res) => {
   }
 });
 
+app.post('/api/assets/:id/image', uploadLimiter, uploadAssetImageMiddleware, async (req, res) => {
+  try {
+    const asset = await Store.get(req.params.id);
+    if (!asset || asset.kind !== 'asset') return res.status(404).json({ error: '资产不存在。' });
+    if (!req.file) return res.status(400).json({ error: '请选择一张资产图片。' });
+    if (!String(req.file.mimetype || '').startsWith('image/')) {
+      return res.status(400).json({ error: '资产文件必须是图片格式。' });
+    }
+    const filename = normalizeUploadFilename(req.file.originalname || `${asset.name}.png`);
+    asset.data = {
+      ...(asset.data || {}),
+      hasImage: true,
+      imageName: filename,
+      imageMime: req.file.mimetype,
+      imageSize: req.file.size,
+      imageUpdatedAt: now()
+    };
+    asset.updatedAt = now();
+    res.json(await Store.put(asset, req.file.buffer));
+  } catch (error) {
+    res.status(500).json({ error: String(error.message || error) });
+  }
+});
+
+app.get('/api/assets/:id/image', async (req, res) => {
+  try {
+    const asset = await Store.get(req.params.id, true);
+    if (!asset || asset.kind !== 'asset' || !asset.blob) return res.status(404).send('Asset image not found');
+    const mime = String(asset.data?.imageMime || 'application/octet-stream');
+    const rawName = normalizeUploadFilename(asset.data?.imageName || `${asset.name}.png`);
+    const asciiName = rawName.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_') || 'asset-image';
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    if (String(req.query.download || '') === '1') {
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(rawName)}`
+      );
+    }
+    res.send(asset.blob);
+  } catch (error) {
+    res.status(500).send(String(error.message || error));
+  }
+});
+
 app.post('/api/projects/:projectId/records', async (req, res) => {
   try {
     const project = await Store.get(req.params.projectId);
@@ -1433,6 +1654,9 @@ app.patch('/api/records/:id', async (req, res) => {
     if (req.body?.status && allowedStatuses.includes(req.body.status)) record.status = req.body.status;
     if (req.body?.name) record.name = String(req.body.name);
     if (req.body?.data && typeof req.body.data === 'object') record.data = { ...record.data, ...req.body.data };
+    if (record.kind === 'scene' && req.body?.data && ('primaryLine' in req.body.data || 'secondaryLines' in req.body.data)) {
+      record.data.primaryLineSource = 'manual';
+    }
     record.updatedAt = now();
     const saved = await Store.put(record);
     if (record.kind === 'file' && record.subtype === 'script' && req.body?.data?.authoritative === true) {
@@ -1494,7 +1718,7 @@ function selectJobProvider(requested, action, targets) {
 async function executeAIJob(job, projectId, action, targets, scope, selectedProvider) {
   return aiRequestContext.run({ provider: selectedProvider }, async () => {
    try {
-    const context = ['knowledge', 'assets', 'scenes'].includes(action) ? await sourceContext(projectId) : '';
+    const context = ['knowledge', 'assets', 'scenes', 'asset_prompt'].includes(action) ? await sourceContext(projectId) : '';
     if (['knowledge', 'assets', 'scenes'].includes(action) && !context.trim()) {
       throw new Error('请先上传并解析剧本或项目资料。');
     }
@@ -1503,6 +1727,7 @@ async function executeAIJob(job, projectId, action, targets, scope, selectedProv
     if (action === 'assets') result = await runAssetJob(projectId, targets, context);
     if (action === 'scenes') result = await runSceneJob(projectId, scope?.range, context);
     if (action === 'prompt') result = await runPromptJob(projectId, targets, scope);
+    if (action === 'asset_prompt') result = await runAssetPromptJob(projectId, targets, context);
     if (action === 'audit') result = await runAuditJob(projectId, targets);
     await finishJob(job, 'completed', { result });
   } catch (error) {
@@ -1518,7 +1743,7 @@ app.post('/api/projects/:projectId/ai/jobs', aiLimiter, async (req, res) => {
   const targets = Array.isArray(req.body?.targets) ? req.body.targets : [];
   const scope = req.body?.scope || {};
   const requestedProvider = String(req.body?.provider || 'auto');
-  if (!['knowledge', 'assets', 'scenes', 'prompt', 'audit'].includes(action)) {
+  if (!['knowledge', 'assets', 'scenes', 'prompt', 'asset_prompt', 'audit'].includes(action)) {
     return res.status(400).json({ error: '不支持的AI任务。' });
   }
   if (!targets.length && action !== 'scenes') return res.status(400).json({ error: '请选择至少一个生成目标。' });
@@ -1686,5 +1911,6 @@ module.exports = {
   aiBaseUrl,
   callAI,
   normalizeUploadFilename,
+  mergeSceneLineMembership,
   WORKFLOW_SCHEMA_MIGRATIONS
 };
