@@ -4,6 +4,7 @@
   "description": "AIGC 影视工作流：资料、知识图谱、资产库、15秒分镜、提示词与审阅",
   "main": "server.js",
   "scripts": {
+    "postinstall": "node scripts/notify-maintenance.js",
     "start": "node server.js",
     "check": "node --check server.js && node --check public/workflow.js && node --check scripts/script-scene-test.js",
     "test": "node scripts/linking-test.js && node scripts/provider-test.js && node scripts/smoke-test.js",

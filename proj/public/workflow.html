@@ -9,6 +9,16 @@
   <link rel="stylesheet" href="/workflow.css">
 </head>
 <body>
+  <div class="deployment-maintenance" id="deployment-maintenance" hidden aria-live="assertive" aria-busy="true">
+    <div class="maintenance-card">
+      <div class="maintenance-spinner" aria-hidden="true"></div>
+      <span class="kicker">SYSTEM UPDATE</span>
+      <h1>网站正在更新</h1>
+      <p id="maintenance-message">为保护正在生成的内容，更新期间暂时停止操作。</p>
+      <div class="maintenance-progress"><i></i></div>
+      <small id="maintenance-jobs">新版本就绪后，本页面会自动刷新。</small>
+    </div>
+  </div>
   <div class="app-shell">
     <header class="topbar">
       <button class="mobile-menu" id="mobile-menu" aria-label="打开导航">☰</button>

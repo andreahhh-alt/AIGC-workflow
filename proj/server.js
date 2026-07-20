@@ -203,6 +203,52 @@ const Store = {
   remove: (...args) => (pool ? PgStore : LocalStore).remove(...args)
 };
 
+const MAINTENANCE_RECORD_ID = 'system_deployment_maintenance';
+
+async function deploymentStatus() {
+  const record = await Store.get(MAINTENANCE_RECORD_ID);
+  const expiresAt = Number(record?.data?.expiresAt || 0);
+  const active = Boolean(record?.data?.active && (!expiresAt || expiresAt > now()));
+  const projects = await Store.list(null, 'project');
+  let runningJobs = 0;
+  for (const project of projects) {
+    const jobs = await Store.list(project.id, 'job');
+    runningJobs += jobs.filter(job => job.status === 'running').length;
+  }
+  return {
+    active,
+    message: active ? (record.data?.message || '网站正在更新，请稍候。') : '',
+    startedAt: active ? Number(record.data?.startedAt || 0) : 0,
+    expiresAt: active ? expiresAt : 0,
+    runningJobs
+  };
+}
+
+async function setDeploymentMaintenance(active, details = {}) {
+  const existing = await Store.get(MAINTENANCE_RECORD_ID);
+  const timestamp = now();
+  return Store.put({
+    id:MAINTENANCE_RECORD_ID,
+    projectId:'__system__',
+    kind:'system',
+    subtype:'deployment_maintenance',
+    name:'部署维护状态',
+    status:active ? 'active' : 'completed',
+    data:{
+      ...(existing?.data || {}),
+      active:Boolean(active),
+      message:details.message || (active ? '网站正在更新，请稍候。' : ''),
+      targetCommit:details.targetCommit || '',
+      startedAt:active ? timestamp : Number(existing?.data?.startedAt || timestamp),
+      expiresAt:active ? timestamp + 20 * 60 * 1000 : 0,
+      completedAt:active ? 0 : timestamp
+    },
+    order:-1,
+    createdAt:existing?.createdAt || timestamp,
+    updatedAt:timestamp
+  });
+}
+
 const WORKFLOW_SCHEMA_MIGRATIONS = [
   'ALTER TABLE workflow_records ALTER COLUMN sort_order TYPE bigint USING sort_order::bigint'
 ];
@@ -1692,6 +1738,39 @@ function classifyFile(filename, mime, requested) {
 }
 
 // ---------- 工作流 API ----------
+app.get('/api/deployment/status', async (req, res) => {
+  try { res.json(await deploymentStatus()); }
+  catch (error) { res.status(500).json({ error:String(error.message || error) }); }
+});
+
+app.post('/api/deployment/maintenance', async (req, res) => {
+  const expected = process.env.MAINTENANCE_TOKEN || process.env.ADMIN_PASSWORD;
+  const provided = req.headers['x-maintenance-token'] || req.headers['x-admin-password'];
+  if (!expected || provided !== expected) return res.status(401).json({ error:'维护授权失败。' });
+  try {
+    await setDeploymentMaintenance(req.body?.active !== false, {
+      message:String(req.body?.message || ''),
+      targetCommit:String(req.body?.targetCommit || '')
+    });
+    res.json(await deploymentStatus());
+  } catch (error) { res.status(500).json({ error:String(error.message || error) }); }
+});
+
+app.use('/api', async (req, res, next) => {
+  if (['GET','HEAD','OPTIONS'].includes(req.method) || req.path.startsWith('/deployment/')) return next();
+  try {
+    const status = await deploymentStatus();
+    if (status.active) {
+      return res.status(503).json({
+        error:'网站正在更新，暂时不能提交操作。更新完成后页面会自动刷新。',
+        code:'DEPLOYMENT_MAINTENANCE',
+        retryAfter:15
+      });
+    }
+    next();
+  } catch (error) { next(error); }
+});
+
 app.get('/api/workflow/bootstrap', async (req, res) => {
   try {
     const projects = await Store.list(null, 'project');
@@ -2144,6 +2223,11 @@ if (require.main === module) {
     .then(() => app.listen(PORT, () => {
       console.log(`AIGC影视工作流已启动：http://localhost:${PORT}`);
       console.log(`存储：${pool ? 'Postgres' : '本地JSON'}｜AI：${provider()} ${model()}`);
+      setTimeout(() => {
+        void setDeploymentMaintenance(false).catch(error =>
+          console.error('解除部署维护模式失败：', error)
+        );
+      }, 5000);
     }))
     .catch(error => {
       console.error('初始化失败：', error);
@@ -2168,5 +2252,7 @@ module.exports = {
   normalizeUploadFilename,
   mergeSceneLineMembership,
   normalizeGroupShots,
+  deploymentStatus,
+  setDeploymentMaintenance,
   WORKFLOW_SCHEMA_MIGRATIONS
 };

@@ -28,6 +28,17 @@ html{background:var(--bg);color-scheme:dark}
 body{margin:0;background:
   radial-gradient(circle at 78% -10%,rgba(99,198,204,.08),transparent 28rem),
   var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.55}
+.deployment-maintenance{position:fixed;z-index:9999;inset:0;display:grid;place-items:center;padding:24px;background:rgba(5,9,14,.93);backdrop-filter:blur(18px)}
+.deployment-maintenance[hidden]{display:none}
+.maintenance-card{width:min(520px,100%);padding:34px;border:1px solid #355466;background:linear-gradient(145deg,#15212d,#0d151e);box-shadow:0 28px 90px rgba(0,0,0,.6);text-align:center}
+.maintenance-spinner{width:44px;height:44px;margin:0 auto 20px;border:2px solid var(--line);border-top-color:var(--cyan);border-radius:50%;animation:maintenance-spin 1s linear infinite}
+.maintenance-card h1{margin:10px 0 8px;font:400 30px var(--serif);letter-spacing:.08em}
+.maintenance-card p{margin:0;color:var(--muted);line-height:1.7}
+.maintenance-progress{height:3px;margin:24px 0 12px;overflow:hidden;background:var(--line)}
+.maintenance-progress i{display:block;width:36%;height:100%;background:var(--cyan);animation:maintenance-progress 1.8s ease-in-out infinite}
+.maintenance-card small{color:var(--faint)}
+@keyframes maintenance-spin{to{transform:rotate(360deg)}}
+@keyframes maintenance-progress{0%{transform:translateX(-120%)}100%{transform:translateX(380%)}}
 button,input,select,textarea{font:inherit}
 button,a,select{outline-color:var(--cyan)}
 button{color:inherit}
