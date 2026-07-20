@@ -1374,15 +1374,16 @@ ${JSON.stringify(sourceScenes)}`;
   const usedSceneIds = new Set();
   const usedGroupIds = new Set();
   const seenSceneNumbers = new Map();
-  let order = 1;
   for (const [sceneIndex, scene] of scenes.entries()) {
+    const sourceSceneIndex = Number(scene.sceneIndex) || sceneIndex + 1;
+    const sceneOrder = sourceSceneIndex * 100;
     const rawSceneNo = normalizeSceneNo(scene.sceneNo);
     const occurrence = (seenSceneNumbers.get(rawSceneNo) || 0) + 1;
     seenSceneNumbers.set(rawSceneNo, occurrence);
     let normalized = normalizeSceneData(projectId, scene, project, {
       occurrence,
       duplicateSceneNo: (sceneNumberCounts.get(rawSceneNo) || 0) > 1,
-      sceneIndex: sceneIndex + 1
+      sceneIndex: sourceSceneIndex
     });
     const matchedExistingScene = existingScenes.find(item =>
       item.data?.canonicalKey === normalized.canonicalKey
@@ -1406,13 +1407,12 @@ ${JSON.stringify(sourceScenes)}`;
     }
     if (existingScene?.status === 'locked') {
       normalized = { ...normalized, ...existingScene.data, sceneId };
-      order += 1;
     } else {
       await Store.put({
         id: sceneId, projectId, kind: 'scene', subtype: 'script_scene',
         name: `场${normalized.displaySceneNo} · ${normalized.heading}`, status: 'ai_draft',
         data: normalized, textContent: normalized.sourceText || null,
-        order: order++, createdAt: existingScene?.createdAt || now(), updatedAt: now()
+        order: sceneOrder, createdAt: existingScene?.createdAt || now(), updatedAt: now()
       });
     }
     for (const [groupIndex, group] of (normalized.shotGroups || []).entries()) {
@@ -1448,7 +1448,7 @@ ${JSON.stringify(sourceScenes)}`;
           duration: shots.length * 15,
           promptStatus: existingGroup?.data?.promptStatus || 'not_generated'
         },
-        order: order++, createdAt: existingGroup?.createdAt || now(), updatedAt: now()
+        order: sceneOrder + groupIndex + 1, createdAt: existingGroup?.createdAt || now(), updatedAt: now()
       });
     }
   }
