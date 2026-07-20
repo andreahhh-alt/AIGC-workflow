@@ -589,7 +589,7 @@ function renderAssetDetail() {
   host.innerHTML = `
     <div class="dialog-head">
       <div><span class="kicker">${escapeHtml(asset.subtype.toUpperCase())} ASSET</span><h2>${escapeHtml(asset.name)}</h2></div>
-      <button type="button" data-close-asset aria-label="关闭">×</button>
+      <button type="button" data-dialog-close aria-label="关闭">×</button>
     </div>
     <div class="asset-detail-layout">
       <section class="asset-detail-media">
@@ -1073,6 +1073,26 @@ function uploadRequest(url, body, onProgress) {
 }
 
 function bindEvents() {
+  document.addEventListener('click',event => {
+    const closeButton = event.target.closest('[data-dialog-close]');
+    if (!closeButton) return;
+    const dialog = closeButton.closest('dialog');
+    if (!dialog) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (dialog.open) dialog.close();
+  },true);
+
+  $$('dialog').forEach(dialog => dialog.addEventListener('click',event => {
+    if (event.target !== dialog) return;
+    const bounds = dialog.getBoundingClientRect();
+    const inside = event.clientX >= bounds.left
+      && event.clientX <= bounds.right
+      && event.clientY >= bounds.top
+      && event.clientY <= bounds.bottom;
+    if (!inside && dialog.open) dialog.close();
+  }));
+
   $$('.nav-item').forEach(button => button.addEventListener('click',() => switchView(button.dataset.view)));
   $$('[data-go]').forEach(button => button.addEventListener('click',() => switchView(button.dataset.go)));
   $('#mobile-menu').addEventListener('click',() => $('#sidebar').classList.toggle('open'));
@@ -1236,7 +1256,6 @@ function bindEvents() {
     $$('.rail-scene.related').forEach(button => button.classList.remove('related'));
   });
   $('#asset-detail-dialog').addEventListener('click',async event => {
-    if (event.target.closest('[data-close-asset]')) return $('#asset-detail-dialog').close();
     if (event.target.closest('[data-upload-asset-image]')) return $('#asset-image-input').click();
     const generate = event.target.closest('[data-generate-asset-prompt]');
     if (generate) return runAI('asset_prompt',[generate.dataset.generateAssetPrompt],{assetId:generate.dataset.generateAssetPrompt},'正在生成资产提示词');

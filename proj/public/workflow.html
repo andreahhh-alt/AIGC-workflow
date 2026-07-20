@@ -245,17 +245,17 @@
 
   <dialog id="project-dialog">
     <form method="dialog" id="project-form">
-      <div class="dialog-head"><div><span class="kicker">NEW PROJECT</span><h2>创建影视项目</h2></div><button value="cancel" aria-label="关闭">×</button></div>
+      <div class="dialog-head"><div><span class="kicker">NEW PROJECT</span><h2>创建影视项目</h2></div><button type="button" data-dialog-close aria-label="关闭">×</button></div>
       <label>项目名称<input name="name" required placeholder="例如：四季之地"></label>
       <label>一句话梗概<textarea name="logline" rows="3" placeholder="主角、目标、阻力与核心变化"></textarea></label>
       <label>剧本版本<input name="scriptVersion" placeholder="例如：v1.0 / 2026-07-19"></label>
-      <div class="dialog-actions"><button value="cancel" class="ghost-button">取消</button><button value="submit" class="primary-button">创建项目</button></div>
+      <div class="dialog-actions"><button type="button" data-dialog-close class="ghost-button">取消</button><button type="submit" value="submit" class="primary-button">创建项目</button></div>
     </form>
   </dialog>
 
   <dialog id="upload-dialog">
     <form method="dialog" id="upload-form">
-      <div class="dialog-head"><div><span class="kicker">UPLOAD SOURCES</span><h2>上传项目资料</h2></div><button value="cancel" aria-label="关闭">×</button></div>
+      <div class="dialog-head"><div><span class="kicker">UPLOAD SOURCES</span><h2>上传项目资料</h2></div><button type="button" data-dialog-close aria-label="关闭">×</button></div>
       <label>资料类型
         <select name="kind">
           <option value="auto">自动识别</option>
@@ -272,15 +272,15 @@
         <button type="button" class="secondary-button" id="dialog-file-picker">选择文件</button>
       </div>
       <p class="dialog-note">上传后只进行确定性文本提取。知识分析、资产提取和分镜拆分由你后续选择。</p>
-      <div class="dialog-actions"><button value="cancel" class="ghost-button">取消</button><button value="submit" class="primary-button">上传并解析</button></div>
+      <div class="dialog-actions"><button type="button" data-dialog-close class="ghost-button">取消</button><button type="submit" value="submit" class="primary-button">上传并解析</button></div>
     </form>
   </dialog>
 
   <dialog id="asset-dialog">
     <form method="dialog" id="asset-form">
-      <div class="dialog-head"><div><span class="kicker">ASSET EXTRACTION</span><h2>选择AI提取类别</h2></div><button value="cancel" aria-label="关闭">×</button></div>
+      <div class="dialog-head"><div><span class="kicker">ASSET EXTRACTION</span><h2>选择AI提取类别</h2></div><button type="button" data-dialog-close aria-label="关闭">×</button></div>
       <div class="check-grid" id="asset-checks"></div>
-      <div class="dialog-actions"><button value="cancel" class="ghost-button">取消</button><button value="submit" class="primary-button">生成选中资产</button></div>
+      <div class="dialog-actions"><button type="button" data-dialog-close class="ghost-button">取消</button><button type="submit" value="submit" class="primary-button">生成选中资产</button></div>
     </form>
   </dialog>
 
@@ -291,7 +291,7 @@
 
   <dialog id="prompt-dialog" class="wide-dialog">
     <form method="dialog" id="prompt-form">
-      <div class="dialog-head"><div><span class="kicker">PROMPT WORKBENCH</span><h2 id="prompt-title">生成分镜提示词</h2></div><button value="cancel" aria-label="关闭">×</button></div>
+      <div class="dialog-head"><div><span class="kicker">PROMPT WORKBENCH</span><h2 id="prompt-title">生成分镜提示词</h2></div><button type="button" data-dialog-close aria-label="关闭">×</button></div>
       <input type="hidden" name="shotGroupId">
       <div class="prompt-options">
         <label>目标模型<select name="targetModel"><option>通用</option><option>Kling</option><option>即梦 Seedance</option><option>海螺 Hailuo</option><option>通义万相</option><option>Runway Gen-4</option><option>Pika</option></select></label>
@@ -309,7 +309,7 @@
         </div>
       </fieldset>
       <p class="dialog-note">重新生成只更新你勾选的字段，其余人工内容和已锁定字段保持不变。</p>
-      <div class="dialog-actions"><button value="cancel" class="ghost-button">取消</button><button value="submit" class="primary-button">AI生成选中字段</button></div>
+      <div class="dialog-actions"><button type="button" data-dialog-close class="ghost-button">取消</button><button type="submit" value="submit" class="primary-button">AI生成选中字段</button></div>
     </form>
   </dialog>
 

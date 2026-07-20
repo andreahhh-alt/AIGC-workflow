@@ -77,6 +77,11 @@ const jsonRequest = async (url, options = {}) => {
       || !workflowJs.includes('data-scene-primary-line')
       || !workflowJs.includes('downloadColorCard')
       || !workflowJs.includes('structured-prompt-card')
+      || (pageHtml.match(/data-dialog-close/g) || []).length < 8
+      || !workflowJs.includes("closest('[data-dialog-close]')")
+      || !workflowJs.includes('data-dialog-close aria-label')
+      || pageHtml.includes('<button value="cancel"')
+      || workflowJs.includes('data-close-asset')
       || workflowJs.includes('data-edit-lines')
       || pageHtml.includes('href="/legacy"')
       || !Array.isArray(bootstrap.comments)
