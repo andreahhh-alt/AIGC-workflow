@@ -50,6 +50,7 @@ const state = {
   monitoredJobs: new Map(),
   jobPollTimer: null,
   jobPollBusy: false,
+  deploymentMaintenanceSeen: false,
   storyMapScroll: Object.create(null)
 };
 
@@ -86,8 +87,43 @@ async function api(url, options = {}) {
       : { 'content-type':'application/json', ...(options.headers || {}) }
   });
   const data = await response.json().catch(() => ({}));
+  if (response.status === 503 && data.code === 'DEPLOYMENT_MAINTENANCE') {
+    showDeploymentMaintenance({
+      active:true,
+      message:data.error,
+      runningJobs:state.data?.jobs?.filter(job => job.status === 'running').length || 0
+    });
+  }
   if (!response.ok) throw new Error(data.error || `请求失败 HTTP ${response.status}`);
   return data;
+}
+
+function showDeploymentMaintenance(status) {
+  const overlay = $('#deployment-maintenance');
+  if (!overlay) return;
+  overlay.hidden = !status.active;
+  if (status.active) {
+    state.deploymentMaintenanceSeen = true;
+    $('#maintenance-message').textContent = status.message || '网站正在更新，请稍候。';
+    $('#maintenance-jobs').textContent = status.runningJobs > 0
+      ? `正在等待 ${status.runningJobs} 个AI任务安全完成，随后自动更新。`
+      : '新版本正在启动，就绪后本页面会自动刷新。';
+  }
+}
+
+async function pollDeploymentStatus() {
+  try {
+    const response = await fetch('/api/deployment/status',{ cache:'no-store' });
+    if (!response.ok) return;
+    const status = await response.json();
+    if (status.active) {
+      showDeploymentMaintenance(status);
+    } else if (state.deploymentMaintenanceSeen) {
+      location.reload();
+    } else {
+      showDeploymentMaintenance(status);
+    }
+  } catch {}
 }
 
 function toast(message, type = '') {
@@ -1557,4 +1593,6 @@ function previewPrompt(groupId) {
 
 renderAssetChecks();
 bindEvents();
+pollDeploymentStatus();
+setInterval(pollDeploymentStatus,5000);
 bootstrap(true);

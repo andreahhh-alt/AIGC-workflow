@@ -11,6 +11,7 @@ const child = spawn(process.execPath, ['server.js'], {
     DATABASE_URL: '',
     AI_PROVIDER: 'kimi',
     AI_MODEL: 'kimi-k3',
+    ADMIN_PASSWORD: 'test-admin',
     MOONSHOT_API_KEY: 'test-key',
     AI_API_KEY: '',
     DEEPSEEK_API_KEY: '',
@@ -213,6 +214,23 @@ const jsonRequest = async (url, options = {}) => {
     });
     const queuedJob = await jobResponse.json();
     const jobSubmissionMs = Date.now() - jobStartedAt;
+    const maintenanceStartResponse = await fetch(`${base}/api/deployment/maintenance`, {
+      method:'POST',
+      headers:{ 'content-type':'application/json', 'x-admin-password':'test-admin' },
+      body:JSON.stringify({ active:true, message:'测试维护模式' })
+    });
+    const maintenanceState = await maintenanceStartResponse.json();
+    const blockedDuringMaintenance = await fetch(`${base}/api/projects`, {
+      method:'POST',
+      headers:{ 'content-type':'application/json' },
+      body:JSON.stringify({ name:'维护期间不应创建' })
+    });
+    const blockedPayload = await blockedDuringMaintenance.json();
+    await fetch(`${base}/api/deployment/maintenance`, {
+      method:'POST',
+      headers:{ 'content-type':'application/json', 'x-admin-password':'test-admin' },
+      body:JSON.stringify({ active:false })
+    });
 
     if (
       uploaded.files?.length !== 1
@@ -243,6 +261,10 @@ const jsonRequest = async (url, options = {}) => {
       || queuedJob.job?.status !== 'running'
       || queuedJob.job?.data?.scope?.aiProvider !== 'kimi'
       || jobSubmissionMs > 1500
+      || !maintenanceStartResponse.ok
+      || maintenanceState.active !== true
+      || blockedDuringMaintenance.status !== 503
+      || blockedPayload.code !== 'DEPLOYMENT_MAINTENANCE'
     ) {
       throw new Error('核心工作流断言失败');
     }
@@ -268,7 +290,8 @@ const jsonRequest = async (url, options = {}) => {
       backgroundJobStatus: jobResponse.status,
       backgroundJobSubmissionMs: jobSubmissionMs,
       aiProvider: bootstrap.ai.provider,
-      aiModel: bootstrap.ai.model
+      aiModel: bootstrap.ai.model,
+      deploymentMaintenanceProtected: true
     }));
   } finally {
     child.kill();
