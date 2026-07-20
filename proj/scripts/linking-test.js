@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { normalizeSceneData, linkAnalysisData, mergeSceneLineMembership, normalizeGroupShots } = require('../server');
+const { normalizeSceneData, linkAnalysisData, mergeSceneLineMembership, normalizeGroupShots, filterSceneBlocks } = require('../server');
 
 const project = { data: { scriptVersion: 'test-v1' } };
 const scene21AData = normalizeSceneData('test-project', {
@@ -25,6 +25,11 @@ assert.notStrictEqual(scene21AData.sceneId, scene21BData.sceneId);
 assert.strictEqual(scene21AData.displaySceneNo, '21A');
 assert.strictEqual(scene21BData.displaySceneNo, '21B');
 assert.strictEqual(scene14Data.sceneNo, '14');
+
+const rangeBlocks = [{ sceneNo:'1' },{ sceneNo:'2' },{ sceneNo:'3' }];
+assert.deepStrictEqual(filterSceneBlocks(rangeBlocks, '场2').map(item => item.sceneNo), ['2']);
+assert.deepStrictEqual(filterSceneBlocks(rangeBlocks, '第3场').map(item => item.sceneNo), ['3']);
+assert.deepStrictEqual(filterSceneBlocks(rangeBlocks, '场1-2').map(item => item.sceneNo), ['1','2']);
 
 const linked = linkAnalysisData({
   nodes: [
