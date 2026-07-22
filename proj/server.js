@@ -595,6 +595,9 @@ async function callAI(system, user, options = {}) {
     stream: false,
     messages: [{ role: 'system', content: system }, { role: 'user', content: user }]
   };
+  if (Array.isArray(user) && currentProvider !== 'kimi') {
+    throw new Error('当前选择的AI引擎不支持直接读取图片，请切换到 Kimi 后重试。');
+  }
   if (currentProvider === 'kimi' && currentModel === 'kimi-k3') {
     requestBody.stream = true;
     requestBody.max_completion_tokens = options.maxTokens || (options.json ? 16000 : 10000);
@@ -1071,6 +1074,48 @@ async function sourceContext(projectId) {
   return chunks.join('\n\n').slice(0, 140000);
 }
 
+const KIMI_VISION_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+
+async function sourceImages(projectId, options = {}) {
+  const maxImages = Number(options.maxImages || 8);
+  const maxTotalBytes = Number(options.maxTotalBytes || 45 * 1024 * 1024);
+  const files = (await Store.list(projectId, 'file'))
+    .filter(file => file.subtype === 'image' || String(file.data?.mime || '').startsWith('image/'))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const images = [];
+  let totalBytes = 0;
+  for (const file of files) {
+    if (images.length >= maxImages) break;
+    const mime = String(file.data?.mime || '').toLowerCase();
+    if (!KIMI_VISION_MIMES.has(mime)) continue;
+    const stored = await Store.get(file.id, true);
+    const blob = stored?.blob;
+    if (!blob?.length || totalBytes + blob.length > maxTotalBytes) continue;
+    totalBytes += blob.length;
+    images.push({
+      id:file.id,
+      name:file.name,
+      mime,
+      size:blob.length,
+      dataUrl:`data:${mime};base64,${blob.toString('base64')}`
+    });
+  }
+  return images;
+}
+
+function visionUserContent(prompt, images = []) {
+  return [
+    ...images.flatMap((image, index) => ([
+      { type:'text', text:`图片 ${index + 1}｜文件名：${image.name || `图片${index + 1}`}` },
+      {
+        type:'image_url',
+        image_url:{ url:image.dataUrl }
+      }
+    ])),
+    { type:'text', text:String(prompt || '') }
+  ];
+}
+
 async function saveJob(projectId, action, targets, scope) {
   const record = {
     id: uid('job'), projectId, kind: 'job', subtype: action,
@@ -1194,7 +1239,7 @@ ${JSON.stringify(item)}`;
   return { count: completed.length, failed };
 }
 
-async function runAssetJob(projectId, targets, context) {
+async function runAssetJob(projectId, targets, context, sourceImageList = []) {
   const scenes = await Store.list(projectId, 'scene');
   const sceneRegistry = scenes.map(scene => ({
     sceneId: scene.id,
@@ -1202,20 +1247,40 @@ async function runAssetJob(projectId, targets, context) {
     sceneRef: scene.data?.sceneRef,
     heading: scene.data?.heading
   }));
-  const sourceChunks = chunkContext(context, 28000);
+  const sourceBatches = [
+    ...chunkContext(context, 28000)
+      .filter(sourceChunk => sourceChunk.trim())
+      .map((sourceChunk, index) => ({
+        label:`文本资料 ${index + 1}`,
+        text:sourceChunk,
+        images:[]
+      })),
+    ...Array.from({ length:Math.ceil(sourceImageList.length / 4) }, (_, index) => {
+      const images = sourceImageList.slice(index * 4, index * 4 + 4);
+      return {
+        label:`视觉资料 ${index + 1}`,
+        text:`本批图片文件：${images.map(image => image.name).join('、')}`,
+        images
+      };
+    })
+  ];
   const outcomes = await mapWithConcurrency(targets, 2, async target => {
     try {
-      const chunkResults = await mapWithConcurrency(sourceChunks, 2, async (sourceChunk, chunkIndex) => {
-        const prompt = `只从这一批资料中提取并整理一种资产类别：${target}。这是第${chunkIndex + 1}/${sourceChunks.length}批。
+      const chunkResults = await mapWithConcurrency(sourceBatches, 2, async (sourceBatch, chunkIndex) => {
+        const prompt = `只从这一批资料中提取并整理一种资产类别：${target}。这是第${chunkIndex + 1}/${sourceBatches.length}批（${sourceBatch.label}）。
 输出严格JSON：
-{"assets":[{"type":"${target}","name":"资产名","description":"可直接用于制作的具体描述","tags":["标签"],"visualAnchor":"视觉锚点或声音锚点","continuity":"连续性要求","sceneRefs":[{"sceneNo":"14","sceneRef":"14#1","role":"出现/使用"}],"sourceRefs":["来源"],"confidence":"high|medium|low"}]}
+{"assets":[{"type":"${target}","name":"资产名","description":"可直接用于制作的具体描述","tags":["标签"],"visualAnchor":"视觉锚点或声音锚点","continuity":"连续性要求","sceneRefs":[{"sceneNo":"14","sceneRef":"14#1","role":"出现/使用"}],"sourceRefs":["来源文件名"],"confidence":"high|medium|low"}]}
 不能凭空新增主要人物；每项必须能追溯到本批资料。没有该类别时返回{"assets":[]}。
+分析图片时必须依据画面中实际可见的主体、造型、服装、场景、道具、色彩、材质、光线与构图；不得把不可见信息写成事实。sourceRefs 必须填写对应图片文件名。
 场次索引：
 ${JSON.stringify(sceneRegistry)}
 本批资料：
-${sourceChunk}`;
+${sourceBatch.text}`;
         try {
-          const data = await callAIJson(FILM_SYSTEM, prompt, {
+          const userContent = sourceBatch.images.length
+            ? visionUserContent(prompt, sourceBatch.images)
+            : prompt;
+          const data = await callAIJson(FILM_SYSTEM, userContent, {
             reasoningEffort:'low', maxTokens:8000, timeoutMs:180000, retryNetwork:false
           });
           return { ok:true, assets:Array.isArray(data.assets) ? data.assets : [] };
@@ -1840,7 +1905,11 @@ app.post('/api/projects/:projectId/files', uploadLimiter, uploadFilesMiddleware,
           mime: file.mimetype, size: file.size,
           extension: path.extname(filename).toLowerCase(),
           textLength: text.length,
-          parseNote: text ? '文本已提取，等待人工确认。' : '二进制资料已保存。'
+          parseNote: text
+            ? '文本已提取，等待人工确认。'
+            : file.mimetype.startsWith('image/')
+              ? '图片已保存，可使用 Kimi 进行视觉分析。'
+              : '二进制资料已保存。'
         },
         textContent: text, order: now(), createdAt: now(), updatedAt: now()
       };
@@ -2029,14 +2098,16 @@ app.delete('/api/records/:id', async (req, res) => {
   catch (error) { res.status(500).json({ error: String(error.message || error) }); }
 });
 
-function selectJobProvider(requested, action, targets) {
+function selectJobProvider(requested, action, targets, options = {}) {
   const complexKnowledge = new Set([
     'relationships', 'emotional_arc', 'narrative_structure',
     'foreshadowing', 'character_arcs', 'logic_audit'
   ]);
   let selected = requested;
   if (!['kimi', 'deepseek'].includes(selected)) {
-    selected = action === 'audit'
+    selected = options.preferVision
+      ? 'kimi'
+      : action === 'audit'
       || (action === 'knowledge' && targets.some(target => complexKnowledge.has(target)))
       ? 'kimi'
       : 'deepseek';
@@ -2052,12 +2123,19 @@ async function executeAIJob(job, projectId, action, targets, scope, selectedProv
   return aiRequestContext.run({ provider: selectedProvider }, async () => {
    try {
     const context = ['knowledge', 'assets', 'scenes', 'asset_prompt'].includes(action) ? await sourceContext(projectId) : '';
-    if (['knowledge', 'assets', 'scenes'].includes(action) && !context.trim()) {
+    const images = action === 'assets' ? await sourceImages(projectId) : [];
+    if (action === 'assets' && images.length && selectedProvider !== 'kimi' && !context.trim()) {
+      throw new Error('当前项目只有图片资料。DeepSeek 暂不支持直接读取图片，请在顶部AI引擎中选择 Kimi 后重新生成。');
+    }
+    if (['knowledge', 'scenes'].includes(action) && !context.trim()) {
       throw new Error('请先上传并解析剧本或项目资料。');
+    }
+    if (action === 'assets' && !context.trim() && !images.length) {
+      throw new Error('没有找到可分析的文字或图片资料。图片请使用 PNG、JPEG、WEBP 或 GIF 格式。');
     }
     let result;
     if (action === 'knowledge') result = await runKnowledgeJob(projectId, targets, context);
-    if (action === 'assets') result = await runAssetJob(projectId, targets, context);
+    if (action === 'assets') result = await runAssetJob(projectId, targets, context, selectedProvider === 'kimi' ? images : []);
     if (action === 'scenes') result = await runSceneJob(projectId, scope?.range, context);
     if (action === 'prompt') result = await runPromptJob(projectId, targets, scope);
     if (action === 'asset_prompt') result = await runAssetPromptJob(projectId, targets, context);
@@ -2083,7 +2161,11 @@ app.post('/api/projects/:projectId/ai/jobs', aiLimiter, async (req, res) => {
   try {
     const project = await Store.get(projectId);
     if (!project || project.kind !== 'project') return res.status(404).json({ error: '项目不存在。' });
-    const selectedProvider = selectJobProvider(requestedProvider, action, targets);
+    const projectFiles = action === 'assets' ? await Store.list(projectId, 'file') : [];
+    const preferVision = projectFiles.some(file =>
+      file.subtype === 'image' || String(file.data?.mime || '').startsWith('image/')
+    );
+    const selectedProvider = selectJobProvider(requestedProvider, action, targets, { preferVision });
     if (!apiKey(selectedProvider)) {
       return res.status(400).json({ error: `${selectedProvider === 'deepseek' ? 'DeepSeek' : 'Kimi'} API Key 尚未配置。` });
     }
@@ -2249,6 +2331,8 @@ module.exports = {
   model,
   aiBaseUrl,
   callAI,
+  visionUserContent,
+  selectJobProvider,
   normalizeUploadFilename,
   mergeSceneLineMembership,
   normalizeGroupShots,

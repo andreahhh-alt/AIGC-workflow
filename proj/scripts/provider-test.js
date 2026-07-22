@@ -36,6 +36,8 @@ const {
   model,
   aiBaseUrl,
   callAI,
+  visionUserContent,
+  selectJobProvider,
   normalizeUploadFilename,
   WORKFLOW_SCHEMA_MIGRATIONS
 } = require('../server');
@@ -65,7 +67,27 @@ const {
     { role: 'user', content: '用户请求' }
   ]);
 
+  const visionParts = visionUserContent('分析图片并输出JSON', [{
+    name:'参考图.png',
+    dataUrl:'data:image/png;base64,iVBORw0KGgo='
+  }]);
+  await callAI('系统指令', visionParts, { json: true });
+  assert.deepEqual(captured.body.messages[1].content, [
+    { type:'text', text:'图片 1｜文件名：参考图.png' },
+    {
+      type:'image_url',
+      image_url:{ url:'data:image/png;base64,iVBORw0KGgo=' }
+    },
+    { type:'text', text:'分析图片并输出JSON' }
+  ]);
+
   process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
+  assert.equal(selectJobProvider('auto', 'assets', ['character'], { preferVision:true }), 'kimi');
+  assert.equal(selectJobProvider('auto', 'assets', ['character']), 'deepseek');
+  await assert.rejects(
+    () => callAI('系统指令', visionParts, { json:true, provider:'deepseek' }),
+    /不支持直接读取图片/
+  );
   await callAI('系统指令', '用户请求', { json: true, provider: 'deepseek' });
   assert.equal(captured.url, 'https://api.deepseek.com/chat/completions');
   assert.equal(captured.options.headers.authorization, 'Bearer test-deepseek-key');
